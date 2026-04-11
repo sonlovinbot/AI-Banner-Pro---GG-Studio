@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { UploadedImage } from "../types";
+import { getGeminiApiKey } from "./storageService";
 
 export const generateBannerWithGemini = async (
   referenceImage: UploadedImage,
@@ -10,9 +11,12 @@ export const generateBannerWithGemini = async (
   modelName: string,
   imageSize: string
 ): Promise<string> => {
-  const apiKey = process.env.API_KEY;
+  // Check localStorage first, then .env.local
+  const localKey = getGeminiApiKey();
+  const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const apiKey = localKey || (envKey !== 'your_api_key_here' ? envKey : '');
   if (!apiKey) {
-    throw new Error("API Key is missing. Please select your API key.");
+    throw new Error("Google API Key is missing. Please configure it in API Settings.");
   }
 
   const ai = new GoogleGenAI({ apiKey });

@@ -24,3 +24,16 @@ export interface GenerationConfig {
   model: string;
   quality: "1K" | "2K" | "4K";
 }
+
+export interface HistoryItem {
+  id: string;
+  imageUrl: string;
+  promptUsed: string;
+  timestamp: number;
+  duration?: number;
+  model: string;
+  quality: string;
+  aspectRatio: string;
+}
+
+export type AppPage = 'menu' | 'banner' | 'history';
