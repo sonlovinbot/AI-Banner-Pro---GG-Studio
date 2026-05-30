@@ -85,33 +85,33 @@ AI-Banner-Pro/
 
 ```mermaid
 graph TD
-    U[Người dùng] --> Menu[MenuPage.tsx]
-    Menu --> Banner[BannerTool.tsx]
-    Menu --> UGC[UGCStudio.tsx]
-    Menu --> Brand[BrandStylePage.tsx]
-    Menu --> History[HistoryPage.tsx]
-    Menu --> Settings[ApiKeySettings.tsx]
+    U[Nguoi dung] --> Menu[MenuPage]
+    Menu --> Banner[BannerTool]
+    Menu --> UGC[UGCStudio]
+    Menu --> Brand[BrandStylePage]
+    Menu --> History[HistoryPage]
+    Menu --> Settings[ApiKeySettings]
 
-    Banner -->|backend switch| Router{active_backend}
+    Banner -->|backend switch| Router{active backend}
     UGC -->|backend switch| Router
 
-    Router -->|gemini| Gemini[geminiService.ts]
-    Router -->|coachio| Coachio[coachioService.ts]
+    Router -->|gemini| Gemini[geminiService]
+    Router -->|coachio| Coachio[coachioService]
 
-    Gemini -->|@google/genai| GAPI((Google Gemini API))
-    Coachio -->|upload + submit + poll| CAPI((Coachio API))
+    Gemini -->|google genai SDK| GAPI((Google Gemini API))
+    Coachio -->|upload submit poll| CAPI((Coachio API))
 
     GAPI -.->|base64| Gemini
     CAPI -.->|CDN URL| Coachio
 
-    Gemini --> Storage[storageService.ts]
+    Gemini --> Storage[storageService]
     Coachio --> Storage
     Brand --> Storage
     History --> Storage
 
     Storage <--> LS[(localStorage)]
-    Storage -.->|embedded snapshot| Embedded[data/embeddedHistory.ts]
-    History -->|Export/Import JSON| File[(.json file)]
+    Storage -.->|embedded snapshot| Embedded[embeddedHistory]
+    History -->|Export Import JSON| File[(json file)]
 
     style U fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style GAPI fill:#fff3e0,stroke:#e65100,stroke-width:2px
