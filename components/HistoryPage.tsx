@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
-import { getHistory, removeFromHistory, clearHistory } from '../services/storageService';
+import {
+  getHistory,
+  removeFromHistory,
+  clearHistory,
+  exportHistoryAsJson,
+  importHistoryFromJson,
+  getEmbeddedHistoryCount,
+  importEmbeddedHistory,
+  ImportHistoryResult,
+} from '../services/storageService';
 
 interface HistoryPageProps {
   onNavigate: (page: AppPage) => void;
@@ -11,10 +20,62 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [selectedImage, setSelectedImage] = useState<HistoryItem | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const embeddedCount = getEmbeddedHistoryCount();
 
   useEffect(() => {
     setItems(getHistory());
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const showResult = (result: ImportHistoryResult, source: string) => {
+    setItems(getHistory());
+    if (result.added === 0) {
+      setToast({ kind: 'ok', msg: `${source}: không có item mới (${result.skipped} đã tồn tại)` });
+    } else {
+      setToast({ kind: 'ok', msg: `${source}: +${result.added} item${result.skipped ? `, bỏ qua ${result.skipped} trùng` : ''}` });
+    }
+  };
+
+  const handleExport = () => {
+    if (items.length === 0) return;
+    const blob = new Blob([exportHistoryAsJson()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.download = `banner-history-${stamp}-${items.length}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setToast({ kind: 'ok', msg: `Đã xuất ${items.length} banner` });
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const result = importHistoryFromJson(text, 'merge');
+      showResult(result, `Import ${file.name}`);
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Import lỗi: ${e?.message || 'JSON không hợp lệ'}` });
+    }
+  };
+
+  const handleRestoreSnapshot = () => {
+    try {
+      const result = importEmbeddedHistory('merge');
+      showResult(result, 'Snapshot');
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Snapshot lỗi: ${e?.message || 'unknown'}` });
+    }
+  };
 
   const handleRemove = (id: string) => {
     removeFromHistory(id);
@@ -54,14 +115,53 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               </span>
             </div>
           </div>
-          {items.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportFile(f);
+                e.target.value = '';
+              }}
+            />
+            {embeddedCount > 0 && (
+              <button
+                onClick={handleRestoreSnapshot}
+                className="text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20"
+                title={`Import ${embeddedCount} banner từ snapshot embed trong code`}
+              >
+                <Database size={14} /> Restore snapshot
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-200 px-1.5 py-0.5 rounded-full">{embeddedCount}</span>
+              </button>
+            )}
             <button
-              onClick={() => setShowClearConfirm(true)}
-              className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs text-sky-300 hover:text-sky-200 hover:bg-sky-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              title="Import từ file JSON"
             >
-              <Trash2 size={14} /> Clear All
+              <Upload size={14} /> Import
             </button>
-          )}
+            {items.length > 0 && (
+              <button
+                onClick={handleExport}
+                className="text-xs text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Export toàn bộ history ra file JSON"
+              >
+                <FileJson size={14} /> Export
+              </button>
+            )}
+            {items.length > 0 && (
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 size={14} /> Clear All
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -72,12 +172,28 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             <div className="w-20 h-20 border-4 border-gray-800 border-dashed rounded-xl mb-4 opacity-50"></div>
             <p className="text-lg mb-2">No history yet</p>
             <p className="text-sm text-gray-600">Generated banners will appear here</p>
-            <button
-              onClick={() => onNavigate('banner')}
-              className="mt-6 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg transition-colors text-sm"
-            >
-              Go to Banner Tool
-            </button>
+            <div className="mt-6 flex flex-wrap gap-2 justify-center">
+              <button
+                onClick={() => onNavigate('banner')}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg transition-colors text-sm"
+              >
+                Go to Banner Tool
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-sky-600/20 hover:bg-sky-600/30 text-sky-200 border border-sky-500/30 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
+              >
+                <Upload size={16} /> Import JSON
+              </button>
+              {embeddedCount > 0 && (
+                <button
+                  onClick={handleRestoreSnapshot}
+                  className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 border border-emerald-500/30 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
+                >
+                  <Database size={16} /> Restore snapshot ({embeddedCount})
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -122,6 +238,14 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.aspectRatio}</span>
                     <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.quality}</span>
+                    {item.model && (
+                      <span
+                        className="text-[10px] bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/20 truncate max-w-[120px]"
+                        title={item.model}
+                      >
+                        {item.model}
+                      </span>
+                    )}
                     {item.duration && (
                       <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20">
                         {item.duration.toFixed(1)}s
@@ -162,6 +286,21 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                 <Download size={18} /> Download
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div
+            className={`px-4 py-2.5 rounded-lg shadow-lg text-sm flex items-center gap-2 border ${
+              toast.kind === 'ok'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                : 'bg-red-500/10 border-red-500/30 text-red-200'
+            }`}
+          >
+            {toast.msg}
           </div>
         </div>
       )}

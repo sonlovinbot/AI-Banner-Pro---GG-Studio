@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Layers, Wand2, Clock, ArrowRight, Key, Zap } from 'lucide-react';
+import { Layers, Wand2, Clock, ArrowRight, Key, Zap, Palette, UserSquare2 } from 'lucide-react';
 import { AppPage } from '../types';
-import { getHistory } from '../services/storageService';
+import { getHistory, getBrandProjects } from '../services/storageService';
 import { getCoachioApiKey } from '../services/coachioService';
 import { getGeminiApiKey, getActiveBackend } from '../services/storageService';
 import { ApiKeySettings } from './ApiKeySettings';
@@ -12,6 +12,7 @@ interface MenuPageProps {
 
 export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const historyCount = getHistory().length;
+  const brandCount = getBrandProjects().length;
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey = !!getGeminiApiKey();
   const activeBackend = getActiveBackend();
@@ -45,7 +46,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
 
       {/* Main Content */}
       <main className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="max-w-7xl w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
 
           {/* Banner Tool Card */}
           <button
@@ -72,6 +73,50 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
               </span>
               <span className="text-xs bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full border border-purple-500/20">
                 Multi-upload
+              </span>
+            </div>
+          </button>
+
+          {/* UGC Studio Card */}
+          <button
+            onClick={() => onNavigate('ugc-studio')}
+            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-cyan-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/10"
+          >
+            <div className="bg-gradient-to-br from-cyan-600 to-sky-600 p-4 rounded-xl w-fit mb-6">
+              <UserSquare2 size={32} className="text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              UGC Studio
+              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+            </h2>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Tạo content với khuôn mặt nhất quán: upload face + fashion/style + product.
+            </p>
+            <div className="mt-4">
+              <span className="text-xs bg-cyan-500/10 text-cyan-300 px-3 py-1 rounded-full border border-cyan-500/20">
+                Face-consistent
+              </span>
+            </div>
+          </button>
+
+          {/* Brand Style Card */}
+          <button
+            onClick={() => onNavigate('brand-style')}
+            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-pink-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-pink-500/10"
+          >
+            <div className="bg-gradient-to-br from-pink-600 to-rose-600 p-4 rounded-xl w-fit mb-6">
+              <Palette size={32} className="text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              Brand Style
+              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+            </h2>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Tạo sẵn brand kit (logo, ảnh tham chiếu, JSON, brand info) để dùng nhanh khi tạo banner.
+            </p>
+            <div className="mt-4">
+              <span className="text-xs bg-pink-500/10 text-pink-400 px-3 py-1 rounded-full border border-pink-500/20">
+                {brandCount} brand{brandCount !== 1 ? 's' : ''} saved
               </span>
             </div>
           </button>

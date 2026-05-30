@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local history exports (user data, not source)
+banner-history-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

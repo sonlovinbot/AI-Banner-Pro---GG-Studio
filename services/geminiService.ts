@@ -89,3 +89,77 @@ export const generateBannerWithGemini = async (
     throw error;
   }
 };
+
+export const generateUgcWithGemini = async (
+  faceImage: UploadedImage,
+  fashionImage: UploadedImage,
+  productImage: UploadedImage,
+  userPrompt: string,
+  brandContent: string,
+  aspectRatio: string,
+  modelName: string,
+  imageSize: string
+): Promise<string> => {
+  const localKey = getGeminiApiKey();
+  const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const apiKey = localKey || (envKey !== 'your_api_key_here' ? envKey : '');
+  if (!apiKey) {
+    throw new Error("Google API Key is missing. Please configure it in API Settings.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const cleanFace = faceImage.base64.split(',')[1];
+  const cleanFashion = fashionImage.base64.split(',')[1];
+  const cleanProd = productImage.base64.split(',')[1];
+
+  const promptText = `
+You are an expert UGC content creator and photographer.
+
+Inputs (3 images provided in order):
+1. FACE REFERENCE — preserve the exact facial features, skin tone, hair, and identity of this person. Do NOT alter the face or generate a new person. The output MUST be recognisably the same individual.
+2. FASHION & STYLE REFERENCE — apply the outfit, color palette, lighting, mood, and overall aesthetic of this image.
+3. PRODUCT — integrate this product naturally into the scene; the person should be using, wearing, or interacting with it.
+
+Brand context: ${brandContent || "n/a"}
+Additional instructions: ${userPrompt || "Candid, natural, social-media-ready UGC."}
+
+Hard rules:
+- Identical facial identity to image #1 (no face swaps, no new person).
+- Photo-realistic UGC look, natural human proportions, no uncanny artifacts.
+- Cohesive lighting between person, outfit, and product.
+  `.trim();
+
+  try {
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: {
+        parts: [
+          { text: promptText },
+          { inlineData: { mimeType: faceImage.mimeType, data: cleanFace } },
+          { inlineData: { mimeType: fashionImage.mimeType, data: cleanFashion } },
+          { inlineData: { mimeType: productImage.mimeType, data: cleanProd } },
+        ]
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: (aspectRatio as any) || "1:1",
+          imageSize: (imageSize as any) || "1K",
+        }
+      },
+    });
+
+    if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+
+    throw new Error("No image data found in response");
+  } catch (error) {
+    console.error("Gemini UGC Generation Error:", error);
+    throw error;
+  }
+};

@@ -1,0 +1,425 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft, Palette, Plus, Trash2, Edit3, Save, X, Upload, Image as ImageIcon, FileJson,
+} from 'lucide-react';
+import { AppPage, BrandProject, LibraryImage } from '../types';
+import {
+  getBrandProjects, saveBrandProject, deleteBrandProject,
+} from '../services/storageService';
+import { compressForLibrary } from '../services/imageUtils';
+
+interface Props {
+  onNavigate: (page: AppPage) => void;
+}
+
+const MAX_REFERENCES = 5;
+
+type RefSlot = 'styleReferences' | 'productReferences';
+
+const emptyDraft = (): BrandProject => ({
+  id: Math.random().toString(36).substring(7),
+  name: '',
+  brandInfo: '',
+  eventInfo: '',
+  jsonPrompt: '',
+  logo: undefined,
+  styleReferences: [],
+  productReferences: [],
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+});
+
+const formatDate = (ts: number) =>
+  new Date(ts).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
+  const [projects, setProjects] = useState<BrandProject[]>(() => getBrandProjects());
+  const [editing, setEditing] = useState<BrandProject | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleNew = () => { setError(null); setEditing(emptyDraft()); };
+  const handleEdit = (p: BrandProject) => { setError(null); setEditing({ ...p }); };
+  const handleCancel = () => { setEditing(null); setError(null); };
+
+  const handleSave = (project: BrandProject) => {
+    if (!project.name.trim()) { setError('Tên brand không được trống.'); return; }
+    if (project.jsonPrompt.trim()) {
+      try { JSON.parse(project.jsonPrompt); } catch {
+        setError('JSON prompt không hợp lệ.'); return;
+      }
+    }
+    try {
+      const next = saveBrandProject({ ...project, name: project.name.trim() });
+      setProjects(next);
+      setEditing(null);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message || 'Không lưu được brand project.');
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    setProjects(deleteBrandProject(id));
+    setConfirmDelete(null);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-slate-200 flex flex-col">
+      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => onNavigate('menu')}
+              className="p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className="flex items-center gap-3">
+              <Palette size={20} className="text-pink-400" />
+              <h1 className="text-lg font-bold text-white">Brand Style</h1>
+              <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full">
+                {projects.length} brand{projects.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+          {!editing && (
+            <button
+              onClick={handleNew}
+              className="text-xs bg-pink-600 hover:bg-pink-500 text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
+            >
+              <Plus size={14} /> Tạo Brand mới
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-6xl mx-auto w-full px-6 py-6">
+        {editing ? (
+          <BrandEditor
+            draft={editing}
+            onChange={setEditing}
+            onCancel={handleCancel}
+            onSave={() => handleSave(editing)}
+            error={error}
+          />
+        ) : projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-[60vh] text-gray-500">
+            <Palette size={48} className="text-gray-700 mb-4" />
+            <p className="text-lg mb-2">Chưa có brand nào</p>
+            <p className="text-sm text-gray-600 mb-6">Tạo brand kit để chèn nhanh khi sinh banner</p>
+            <button
+              onClick={handleNew}
+              className="bg-pink-600 hover:bg-pink-500 text-white px-6 py-2.5 rounded-lg flex items-center gap-2"
+            >
+              <Plus size={16} /> Tạo Brand đầu tiên
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {projects.map(p => (
+              <div key={p.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex flex-col">
+                <div className="aspect-video bg-gray-950 grid grid-cols-3 gap-px">
+                  {(() => {
+                    const previews: LibraryImage[] = [
+                      ...(p.logo ? [p.logo] : []),
+                      ...p.styleReferences,
+                      ...p.productReferences,
+                    ].slice(0, 3);
+                    return (
+                      <>
+                        {previews.map(img => (
+                          <img key={img.id} src={img.base64} alt="brand" className="w-full h-full object-cover" />
+                        ))}
+                        {Array.from({ length: Math.max(0, 3 - previews.length) }).map((_, i) => (
+                          <div key={`ph-${i}`} className="bg-gray-900 border border-gray-800" />
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="p-4 flex-1 flex flex-col">
+                  <h3 className="text-sm font-semibold text-white truncate">{p.name}</h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Updated {formatDate(p.updatedAt)}</p>
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                      {p.styleReferences.length + p.productReferences.length + (p.logo ? 1 : 0)} ảnh
+                    </span>
+                    {p.styleReferences.length > 0 && (
+                      <span className="text-[10px] bg-pink-500/10 text-pink-300 px-1.5 py-0.5 rounded border border-pink-500/20">
+                        style {p.styleReferences.length}
+                      </span>
+                    )}
+                    {p.productReferences.length > 0 && (
+                      <span className="text-[10px] bg-cyan-500/10 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                        product {p.productReferences.length}
+                      </span>
+                    )}
+                    {p.brandInfo && (
+                      <span className="text-[10px] bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/20">brand info</span>
+                    )}
+                    {p.eventInfo && (
+                      <span className="text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20">event</span>
+                    )}
+                    {p.jsonPrompt && (
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/20">json</span>
+                    )}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => handleEdit(p)}
+                      className="flex-1 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 py-1.5 rounded-md flex items-center justify-center gap-1"
+                    >
+                      <Edit3 size={12} /> Sửa
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(p.id)}
+                      className="text-xs bg-gray-800 hover:bg-red-500/80 hover:text-white text-gray-400 px-3 py-1.5 rounded-md"
+                      title="Xoá"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold text-white mb-3">Xoá brand này?</h3>
+            <p className="text-sm text-gray-400 mb-6">Hành động này không thể hoàn tác.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 text-sm">Huỷ</button>
+              <button onClick={() => handleDelete(confirmDelete)} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 text-sm">Xoá</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ────────────────── Editor ──────────────────
+
+interface EditorProps {
+  draft: BrandProject;
+  onChange: (p: BrandProject) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  error: string | null;
+}
+
+const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave, error }) => {
+  const logoInput = useRef<HTMLInputElement>(null);
+  const styleInput = useRef<HTMLInputElement>(null);
+  const productInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const totalImages = useMemo(
+    () => draft.styleReferences.length + draft.productReferences.length + (draft.logo ? 1 : 0),
+    [draft]
+  );
+
+  const update = (patch: Partial<BrandProject>) => onChange({ ...draft, ...patch });
+
+  const handleLogo = async (files: FileList) => {
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const file = files[0];
+      const { base64, mimeType } = await compressForLibrary(file, 1024, 0.85);
+      const item: LibraryImage = {
+        id: Math.random().toString(36).substring(7),
+        base64, mimeType, fileName: file.name, addedAt: Date.now(),
+      };
+      update({ logo: item });
+    } finally { setBusy(false); }
+  };
+
+  const handleRefs = async (files: FileList, slot: RefSlot) => {
+    if (!files.length) return;
+    const current = draft[slot];
+    const room = MAX_REFERENCES - current.length;
+    if (room <= 0) return;
+    setBusy(true);
+    try {
+      const items = await Promise.all(
+        Array.from(files).slice(0, room).map(async (file) => {
+          const { base64, mimeType } = await compressForLibrary(file, 1280, 0.82);
+          return {
+            id: Math.random().toString(36).substring(7),
+            base64, mimeType, fileName: file.name, addedAt: Date.now(),
+          } as LibraryImage;
+        })
+      );
+      update({ [slot]: [...current, ...items] } as Partial<BrandProject>);
+    } finally { setBusy(false); }
+  };
+
+  const removeRef = (id: string, slot: RefSlot) => {
+    update({ [slot]: draft[slot].filter(r => r.id !== id) } as Partial<BrandProject>);
+  };
+
+  const renderRefBlock = (
+    label: string,
+    slot: RefSlot,
+    inputRef: React.RefObject<HTMLInputElement | null>,
+    accentClass: string,
+  ) => (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-gray-400 flex items-center gap-1.5">
+          <ImageIcon size={12} className={accentClass} /> {label}
+        </label>
+        <span className="text-[10px] text-gray-500">{draft[slot].length}/{MAX_REFERENCES}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {draft[slot].map(r => (
+          <div key={r.id} className="relative group aspect-square rounded-md overflow-hidden bg-gray-950 border border-gray-800">
+            <img src={r.base64} alt="ref" className="w-full h-full object-cover" />
+            <button
+              onClick={() => removeRef(r.id, slot)}
+              className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {draft[slot].length < MAX_REFERENCES && (
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="flex flex-col items-center justify-center aspect-square rounded-md bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white disabled:opacity-50"
+          >
+            <Upload size={18} />
+            <span className="text-[9px] mt-1">Thêm</span>
+          </button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) handleRefs(e.target.files, slot);
+          if (inputRef.current) inputRef.current.value = '';
+        }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-white">
+          {draft.createdAt === draft.updatedAt && !draft.name ? 'Brand mới' : `Sửa: ${draft.name || 'Brand'}`}
+        </h2>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="text-xs px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 flex items-center gap-1.5">
+            <X size={14} /> Huỷ
+          </button>
+          <button onClick={onSave} disabled={busy} className="text-xs px-4 py-2 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white flex items-center gap-1.5 font-medium">
+            <Save size={14} /> Lưu
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-xs text-red-300">{error}</div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Tên Brand *</label>
+            <input
+              type="text"
+              value={draft.name}
+              onChange={(e) => update({ name: e.target.value })}
+              placeholder="VD: Coachio Spring 2026"
+              className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-pink-500"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-gray-400 flex items-center gap-1.5"><ImageIcon size={12} /> Logo</label>
+              <span className="text-[10px] text-gray-500">tuỳ chọn · 1 ảnh</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {draft.logo ? (
+                <div className="relative group aspect-square rounded-md overflow-hidden bg-gray-950 border border-gray-800">
+                  <img src={draft.logo.base64} alt="logo" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => update({ logo: undefined })}
+                    className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => logoInput.current?.click()}
+                  className="flex flex-col items-center justify-center aspect-square rounded-md bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white"
+                >
+                  <Upload size={18} />
+                  <span className="text-[9px] mt-1">Logo</span>
+                </button>
+              )}
+            </div>
+            <input ref={logoInput} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { if (e.target.files) handleLogo(e.target.files); if (logoInput.current) logoInput.current.value = ''; }} />
+          </div>
+
+          {renderRefBlock('Style References', 'styleReferences', styleInput, 'text-pink-400')}
+          {renderRefBlock('Product References', 'productReferences', productInput, 'text-cyan-400')}
+
+          <p className="text-[10px] text-gray-500">
+            Tổng ảnh: <span className="text-gray-300">{totalImages}</span> · gợi ý 4–5 ảnh.
+          </p>
+        </section>
+
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Brand Info</label>
+            <textarea
+              value={draft.brandInfo}
+              onChange={(e) => update({ brandInfo: e.target.value })}
+              placeholder="Tên thương hiệu, slogan, tone of voice…"
+              className="w-full h-24 bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-pink-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Event / Campaign Info</label>
+            <textarea
+              value={draft.eventInfo}
+              onChange={(e) => update({ eventInfo: e.target.value })}
+              placeholder="VD: Summer Sale 50% off · diễn ra 01/06–15/06"
+              className="w-full h-24 bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-pink-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1.5">
+              <FileJson size={12} /> JSON Prompt (tuỳ chọn)
+            </label>
+            <textarea
+              value={draft.jsonPrompt}
+              onChange={(e) => update({ jsonPrompt: e.target.value })}
+              placeholder={'{\n  "palette": ["#000", "#fff"],\n  "mood": "minimalist"\n}'}
+              className="w-full h-32 bg-gray-950 border border-gray-800 rounded-md p-3 text-xs font-mono text-white focus:outline-none focus:border-pink-500 resize-none"
+            />
+            <p className="text-[10px] text-gray-500 mt-1">Sẽ được nối vào prompt khi áp dụng brand.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+};

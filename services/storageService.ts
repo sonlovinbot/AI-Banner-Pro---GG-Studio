@@ -1,8 +1,14 @@
-import { HistoryItem } from '../types';
+import { BrandProject, BrandSnippet, HistoryItem, LibraryCategory, LibraryImage } from '../types';
+import { EMBEDDED_HISTORY } from '../data/embeddedHistory';
 
 const HISTORY_KEY = 'banner_pro_history';
 const GEMINI_API_KEY_STORAGE = 'gemini_api_key';
 const ACTIVE_BACKEND_STORAGE = 'active_backend';
+const LIBRARY_KEY_PREFIX = 'banner_pro_library_';
+const BRAND_LIBRARY_KEY = 'banner_pro_brand_library';
+const BRAND_PROJECTS_KEY = 'banner_pro_brand_projects';
+const MAX_LIBRARY_ITEMS = 10;
+const MAX_BRAND_ITEMS = 10;
 
 export function getGeminiApiKey(): string {
   return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
@@ -52,4 +58,189 @@ export function removeFromHistory(id: string): void {
 
 export function clearHistory(): void {
   localStorage.removeItem(HISTORY_KEY);
+}
+
+export interface HistoryExportPayload {
+  type: 'banner_pro_history';
+  version: 1;
+  exportedAt: number;
+  count: number;
+  items: HistoryItem[];
+}
+
+export function exportHistoryAsJson(): string {
+  const payload: HistoryExportPayload = {
+    type: 'banner_pro_history',
+    version: 1,
+    exportedAt: Date.now(),
+    count: getHistory().length,
+    items: getHistory(),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function isValidHistoryItem(x: any): x is HistoryItem {
+  return (
+    x && typeof x === 'object' &&
+    typeof x.id === 'string' &&
+    typeof x.imageUrl === 'string' &&
+    typeof x.timestamp === 'number'
+  );
+}
+
+function parseHistoryJson(json: string): HistoryItem[] {
+  const raw = JSON.parse(json);
+  const items: any[] = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.items)
+      ? raw.items
+      : [];
+  return items.filter(isValidHistoryItem);
+}
+
+export interface ImportHistoryResult {
+  added: number;
+  skipped: number;
+  total: number;
+}
+
+export function importHistoryItems(
+  items: HistoryItem[],
+  mode: 'merge' | 'replace' = 'merge',
+): ImportHistoryResult {
+  if (mode === 'replace') {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+    return { added: items.length, skipped: 0, total: items.length };
+  }
+  const existing = getHistory();
+  const seen = new Set(existing.map(i => i.id));
+  let skipped = 0;
+  const fresh: HistoryItem[] = [];
+  for (const it of items) {
+    if (seen.has(it.id)) { skipped++; continue; }
+    seen.add(it.id);
+    fresh.push(it);
+  }
+  const merged = [...fresh, ...existing].sort((a, b) => b.timestamp - a.timestamp);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
+  return { added: fresh.length, skipped, total: merged.length };
+}
+
+export function importHistoryFromJson(
+  json: string,
+  mode: 'merge' | 'replace' = 'merge',
+): ImportHistoryResult {
+  const items = parseHistoryJson(json);
+  return importHistoryItems(items, mode);
+}
+
+export function getEmbeddedHistoryCount(): number {
+  return EMBEDDED_HISTORY.length;
+}
+
+export function importEmbeddedHistory(
+  mode: 'merge' | 'replace' = 'merge',
+): ImportHistoryResult {
+  return importHistoryItems(EMBEDDED_HISTORY as HistoryItem[], mode);
+}
+
+export function getLibrary(category: LibraryCategory): LibraryImage[] {
+  try {
+    const data = localStorage.getItem(LIBRARY_KEY_PREFIX + category);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistLibrary(category: LibraryCategory, items: LibraryImage[]): boolean {
+  // Drop oldest entries until it fits within the localStorage quota.
+  let trimmed = [...items];
+  while (trimmed.length > 0) {
+    try {
+      localStorage.setItem(LIBRARY_KEY_PREFIX + category, JSON.stringify(trimmed));
+      return true;
+    } catch {
+      trimmed.pop();
+    }
+  }
+  try { localStorage.removeItem(LIBRARY_KEY_PREFIX + category); } catch {}
+  return false;
+}
+
+export function addToLibrary(category: LibraryCategory, item: LibraryImage): LibraryImage[] {
+  const lib = getLibrary(category);
+  if (lib.some(x => x.base64 === item.base64)) return lib;
+  const next = [item, ...lib].slice(0, MAX_LIBRARY_ITEMS);
+  persistLibrary(category, next);
+  return getLibrary(category);
+}
+
+export function removeFromLibrary(category: LibraryCategory, id: string): LibraryImage[] {
+  const next = getLibrary(category).filter(x => x.id !== id);
+  persistLibrary(category, next);
+  return next;
+}
+
+export function getBrandLibrary(): BrandSnippet[] {
+  try {
+    const data = localStorage.getItem(BRAND_LIBRARY_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addToBrandLibrary(content: string): BrandSnippet[] {
+  const trimmed = content.trim();
+  if (!trimmed) return getBrandLibrary();
+  const lib = getBrandLibrary();
+  if (lib.some(x => x.content === trimmed)) return lib;
+  const next = [
+    { id: Math.random().toString(36).substring(7), content: trimmed, addedAt: Date.now() },
+    ...lib,
+  ].slice(0, MAX_BRAND_ITEMS);
+  try { localStorage.setItem(BRAND_LIBRARY_KEY, JSON.stringify(next)); } catch {}
+  return next;
+}
+
+export function removeFromBrandLibrary(id: string): BrandSnippet[] {
+  const next = getBrandLibrary().filter(x => x.id !== id);
+  try { localStorage.setItem(BRAND_LIBRARY_KEY, JSON.stringify(next)); } catch {}
+  return next;
+}
+
+export function getBrandProjects(): BrandProject[] {
+  try {
+    const data = localStorage.getItem(BRAND_PROJECTS_KEY);
+    if (!data) return [];
+    const raw = JSON.parse(data) as any[];
+    return raw.map((p) => ({
+      ...p,
+      styleReferences: p.styleReferences ?? p.references ?? [],
+      productReferences: p.productReferences ?? [],
+    })) as BrandProject[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveBrandProject(project: BrandProject): BrandProject[] {
+  const projects = getBrandProjects();
+  const idx = projects.findIndex(p => p.id === project.id);
+  const next = [...projects];
+  if (idx >= 0) next[idx] = { ...project, updatedAt: Date.now() };
+  else next.unshift(project);
+  try {
+    localStorage.setItem(BRAND_PROJECTS_KEY, JSON.stringify(next));
+  } catch (e) {
+    throw new Error('Brand project too large for local storage. Try fewer or smaller images.');
+  }
+  return next;
+}
+
+export function deleteBrandProject(id: string): BrandProject[] {
+  const next = getBrandProjects().filter(p => p.id !== id);
+  try { localStorage.setItem(BRAND_PROJECTS_KEY, JSON.stringify(next)); } catch {}
+  return next;
 }

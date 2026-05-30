@@ -45,27 +45,31 @@ async function submitTask(
   imageUrls: string[],
   aspectRatio: string,
   resolution: string,
+  modelIdentifier: string,
   apiKey: string
 ): Promise<string> {
+  const body: Record<string, any> = {
+    task_type: 'image',
+    prompt,
+    ai_model_config: {
+      model_identifier: modelIdentifier,
+      generation_mode: 'default',
+      aspect_ratio: aspectRatio,
+      resolution: resolution.toLowerCase(),
+    },
+  };
+
+  if (imageUrls.length > 0) {
+    body.media_inputs = { images_url: imageUrls };
+  }
+
   const response = await fetch(`${COACHIO_BASE_URL}/task/submit`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': apiKey,
     },
-    body: JSON.stringify({
-      task_type: 'image',
-      prompt,
-      ai_model_config: {
-        model_identifier: 'google_image_gen_banana_pro',
-        generation_mode: 'default',
-        aspect_ratio: aspectRatio,
-        resolution: resolution.toLowerCase(),
-      },
-      media_inputs: {
-        images_url: imageUrls,
-      },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -124,6 +128,7 @@ export async function generateBannerWithCoachio(
   brandContent: string,
   aspectRatio: string,
   resolution: string,
+  modelIdentifier: string,
   onProgress?: (status: string) => void
 ): Promise<string> {
   const apiKey = getCoachioApiKey();
@@ -147,13 +152,70 @@ export async function generateBannerWithCoachio(
   ].filter(Boolean).join('\n');
 
   onProgress?.('Submitting task...');
-  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl], aspectRatio, resolution, apiKey);
+  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl], aspectRatio, resolution, modelIdentifier, apiKey);
 
   onProgress?.('Generating...');
   const outputUrls = await pollTaskStatus(taskId, apiKey, onProgress);
 
   // Return the first output URL directly (it's already a CDN URL)
   return outputUrls[0];
+}
+
+export async function generateUgcWithCoachio(
+  faceImage: UploadedImage,
+  fashionImage: UploadedImage,
+  productImage: UploadedImage,
+  userPrompt: string,
+  brandContent: string,
+  aspectRatio: string,
+  resolution: string,
+  modelIdentifier: string,
+  onProgress?: (status: string) => void
+): Promise<string> {
+  const apiKey = getCoachioApiKey();
+  if (!apiKey) {
+    throw new Error('Coachio API key not set. Please configure it in Settings.');
+  }
+
+  onProgress?.('Uploading face reference...');
+  const faceUrl = await uploadImageToCoachio(faceImage.file, apiKey);
+
+  onProgress?.('Uploading fashion & style reference...');
+  const fashionUrl = await uploadImageToCoachio(fashionImage.file, apiKey);
+
+  onProgress?.('Uploading product reference...');
+  const prodUrl = await uploadImageToCoachio(productImage.file, apiKey);
+
+  const fullPrompt = buildUgcPrompt(userPrompt, brandContent);
+
+  onProgress?.('Submitting task...');
+  const taskId = await submitTask(
+    fullPrompt,
+    [faceUrl, fashionUrl, prodUrl],
+    aspectRatio,
+    resolution,
+    modelIdentifier,
+    apiKey
+  );
+
+  onProgress?.('Generating...');
+  const outputUrls = await pollTaskStatus(taskId, apiKey, onProgress);
+
+  return outputUrls[0];
+}
+
+function buildUgcPrompt(userPrompt: string, brandContent: string): string {
+  return [
+    'You are an expert UGC content creator and photographer.',
+    'You will receive THREE reference images in this order:',
+    '1) FACE REFERENCE — the exact person to feature. You MUST preserve their facial identity: same facial features, skin tone, hair, eye color, and overall likeness. Do NOT generate a new face or alter the person. The output must be recognisably the same individual.',
+    '2) FASHION & STYLE REFERENCE — apply the outfit, fashion, color palette, lighting, mood, and composition style of this image.',
+    '3) PRODUCT — integrate this product naturally into the scene; the person should be using, wearing, or interacting with it as appropriate.',
+    'Output: a photo-realistic, social-media-ready UGC image.',
+    'Hard rules: identical facial identity from image #1, natural human proportions, no uncanny artifacts, cohesive lighting between person/outfit/product.',
+    brandContent ? `Brand Messaging: ${brandContent}` : '',
+    userPrompt ? `Additional instructions: ${userPrompt}` : 'Make it feel candid, natural, premium.',
+  ].filter(Boolean).join('\n');
 }
 
 export async function validateCoachioApiKey(apiKey: string): Promise<boolean> {
