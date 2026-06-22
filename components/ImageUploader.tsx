@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, X, Image as ImageIcon, FolderOpen, Trash2, Plus } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, FolderOpen, Trash2, Plus, Clipboard } from 'lucide-react';
 import { LibraryImage, UploadedImage } from '../types';
+import { extractImageFiles, filesToFileList } from '../services/imageUtils';
 
 interface ImageUploaderProps {
   title: string;
@@ -47,6 +48,14 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
     e.preventDefault();
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const files = extractImageFiles(e.clipboardData?.items);
+    if (files.length > 0) {
+      e.preventDefault();
+      onUpload(filesToFileList(files));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2 mb-4">
       <div className="flex items-center justify-between">
@@ -84,9 +93,12 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       </div>
 
       <div
-        className="border-2 border-dashed border-gray-700 bg-gray-900/50 rounded-lg p-3 transition-colors hover:border-indigo-500/50 hover:bg-gray-800/50"
+        tabIndex={0}
+        className="border-2 border-dashed border-gray-700 bg-gray-900/50 rounded-lg p-3 transition-colors hover:border-indigo-500/50 hover:bg-gray-800/50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
+        onPaste={handlePaste}
+        title="Bấm để focus rồi Ctrl/Cmd+V để dán ảnh"
       >
         {images.length > 0 ? (
           <div className="grid grid-cols-4 gap-2">
@@ -110,8 +122,11 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
             </button>
           </div>
         ) : (
-          <div className="text-center text-gray-500 text-xs py-3 pointer-events-none">
-            Kéo &amp; thả nhiều ảnh vào đây<br />hoặc bấm "Tải lên" / "Thư viện"
+          <div className="text-center text-gray-500 text-xs py-3 pointer-events-none flex flex-col items-center gap-1">
+            <span>Kéo &amp; thả nhiều ảnh vào đây</span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-gray-600">
+              hoặc <Clipboard size={10} /> Ctrl/Cmd+V để dán &middot; hoặc bấm "Tải lên" / "Thư viện"
+            </span>
           </div>
         )}
 
@@ -142,7 +157,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-md"><FolderOpen size={18} /></div>
                 <div>
                   <h3 className="text-base font-semibold text-white">Thư viện — {title}</h3>
-                  <p className="text-xs text-gray-500">Bấm vào ảnh để dùng lại · {library!.length}/10</p>
+                  <p className="text-xs text-gray-500">Bấm vào ảnh để dùng lại · {library!.length}/30</p>
                 </div>
               </div>
               <button

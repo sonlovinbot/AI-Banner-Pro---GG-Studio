@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database } from 'lucide-react';
+import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2 } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
+import { HistoryEditModal } from './HistoryEditModal';
 import {
   getHistory,
   removeFromHistory,
@@ -19,6 +20,7 @@ interface HistoryPageProps {
 export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [selectedImage, setSelectedImage] = useState<HistoryItem | null>(null);
+  const [editTarget, setEditTarget] = useState<HistoryItem | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,6 +29,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   useEffect(() => {
     setItems(getHistory());
   }, []);
+
+  const childCount = (id: string) => items.filter(x => x.parentId === id).length;
 
   useEffect(() => {
     if (!toast) return;
@@ -210,6 +214,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
                     <button
+                      onClick={() => setEditTarget(item)}
+                      className="bg-indigo-600 hover:bg-indigo-500 p-2.5 rounded-full text-white transition-all"
+                      title="Edit (mở popup chỉnh sửa)"
+                    >
+                      <Wand2 size={18} />
+                    </button>
+                    <button
                       onClick={() => setSelectedImage(item)}
                       className="bg-white/10 backdrop-blur-md hover:bg-white/20 p-2.5 rounded-full text-white transition-all"
                       title="View"
@@ -219,7 +230,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                     <a
                       href={item.imageUrl}
                       download={`banner-${item.id}.png`}
-                      className="bg-indigo-600 hover:bg-indigo-500 p-2.5 rounded-full text-white transition-all"
+                      className="bg-emerald-600 hover:bg-emerald-500 p-2.5 rounded-full text-white transition-all"
                       title="Download"
                     >
                       <Download size={18} />
@@ -236,6 +247,22 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                 <div className="p-3 border-t border-gray-800">
                   <p className="text-[11px] text-gray-500 mb-1">{formatDate(item.timestamp)}</p>
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    {item.version && item.version > 1 && (
+                      <span
+                        className="text-[10px] bg-purple-500/20 text-purple-200 px-1.5 py-0.5 rounded border border-purple-500/30 font-mono"
+                        title={`Phiên bản v${item.version}, edit từ ${item.parentId?.slice(0,6) || '?'}`}
+                      >
+                        v{item.version}
+                      </span>
+                    )}
+                    {childCount(item.id) > 0 && (
+                      <span
+                        className="text-[10px] bg-rose-500/10 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/20"
+                        title={`${childCount(item.id)} bản chỉnh sửa từ banner này`}
+                      >
+                        +{childCount(item.id)} edits
+                      </span>
+                    )}
                     <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.aspectRatio}</span>
                     <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.quality}</span>
                     {item.model && (
@@ -262,7 +289,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
         )}
       </main>
 
-      {/* Lightbox */}
+      {/* Lightbox (view only) */}
       {selectedImage && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4">
           <button
@@ -277,17 +304,32 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               alt="Full View"
               className="max-w-full max-h-[90vh] object-contain rounded-md shadow-2xl"
             />
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
+              <button
+                onClick={() => { setEditTarget(selectedImage); setSelectedImage(null); }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
+              >
+                <Wand2 size={18} /> Edit
+              </button>
               <a
                 href={selectedImage.imageUrl}
                 download={`banner-full-${selectedImage.id}.png`}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
               >
                 <Download size={18} /> Download
               </a>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Modal */}
+      {editTarget && (
+        <HistoryEditModal
+          item={editTarget}
+          onClose={() => setEditTarget(null)}
+          onUpdated={() => setItems(getHistory())}
+        />
       )}
 
       {/* Toast */}

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Layers, Wand2, Clock, ArrowRight, Key, Zap, Palette, UserSquare2 } from 'lucide-react';
+import { Layers, Wand2, Clock, ArrowRight, Key, Zap, Palette, UserSquare2, Tag, X } from 'lucide-react';
 import { AppPage } from '../types';
 import { getHistory, getBrandProjects } from '../services/storageService';
 import { getCoachioApiKey } from '../services/coachioService';
 import { getGeminiApiKey, getActiveBackend } from '../services/storageService';
 import { ApiKeySettings } from './ApiKeySettings';
+import { APP_VERSION, APP_VERSION_NAME, APP_RELEASE_DATE, APP_CHANGELOG } from '../data/appVersion';
 
 interface MenuPageProps {
   onNavigate: (page: AppPage) => void;
@@ -17,6 +18,7 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const hasGoogleKey = !!getGeminiApiKey();
   const activeBackend = getActiveBackend();
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-950 text-slate-200 flex flex-col">
@@ -181,13 +183,58 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-600">
-        AI Banner Pro &mdash; Powered by Gemini & Coachio AI
+      <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-600 flex flex-col items-center gap-1">
+        <div>AI Banner Pro &mdash; Powered by Gemini & Coachio AI</div>
+        <button
+          onClick={() => setShowChangelog(true)}
+          className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-indigo-300 transition-colors"
+          title="Xem changelog"
+        >
+          <Tag size={11} /> v{APP_VERSION} &middot; {APP_VERSION_NAME}
+          <span className="text-gray-700">({APP_RELEASE_DATE})</span>
+        </button>
       </footer>
 
       {/* API Key Settings Modal */}
       {showApiKeySettings && (
         <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />
+      )}
+
+      {/* Changelog Modal */}
+      {showChangelog && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowChangelog(false)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <header className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="bg-indigo-600/20 text-indigo-300 p-2 rounded-md border border-indigo-500/30">
+                  <Tag size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Changelog</h3>
+                  <p className="text-[11px] text-gray-500">v{APP_VERSION} hiện tại &middot; {APP_VERSION_NAME}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowChangelog(false)} className="p-2 rounded-md hover:bg-gray-800 text-gray-400 hover:text-white">
+                <X size={16} />
+              </button>
+            </header>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {APP_CHANGELOG.map((rel) => (
+                <div key={rel.version} className="border-l-2 border-indigo-500/40 pl-4">
+                  <div className="flex items-baseline gap-2">
+                    <h4 className="text-sm font-bold text-white">v{rel.version}</h4>
+                    <span className="text-[11px] text-gray-500">&middot; {rel.date}</span>
+                  </div>
+                  <ul className="mt-1 space-y-1">
+                    {rel.highlights.map((h, i) => (
+                      <li key={i} className="text-[12px] text-gray-300 leading-snug">&bull; {h}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

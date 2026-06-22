@@ -9,7 +9,8 @@ export const generateBannerWithGemini = async (
   brandContent: string,
   aspectRatio: string,
   modelName: string,
-  imageSize: string
+  imageSize: string,
+  extraReferences: UploadedImage[] = []
 ): Promise<string> => {
   // Check localStorage first, then .env.local
   const localKey = getGeminiApiKey();
@@ -25,18 +26,27 @@ export const generateBannerWithGemini = async (
   const cleanRefBase64 = referenceImage.base64.split(',')[1];
   const cleanProdBase64 = productImage.base64.split(',')[1];
 
+  const cleanExtras = extraReferences
+    .map(img => ({ mimeType: img.mimeType, data: img.base64.split(',')[1] }))
+    .filter(p => !!p.data);
+
+  const extraSection = cleanExtras.length > 0
+    ? `
+    3. ADDITIONAL REFERENCES (${cleanExtras.length} more image${cleanExtras.length > 1 ? 's' : ''} after the product): treat as supplementary style/composition cues from approved past work or user-supplied tweaks. Blend their aesthetic into the result.`
+    : '';
+
   const promptText = `
     You are an expert graphic designer.
     Task: Create a high-quality professional advertising banner or poster.
-    
+
     Inputs:
     1. STYLE REFERENCE IMAGE (First image provided): Strictly follow the composition, color palette, lighting, and typography style of this image.
-    2. PRODUCT IMAGE (Second image provided): Seamlessly integrate this product into the design. The product is the main focus.
-    
+    2. PRODUCT IMAGE (Second image provided): Seamlessly integrate this product into the design. The product is the main focus.${extraSection}
+
     Brand Messaging/Content: ${brandContent || "No specific brand content provided."}
-    
+
     Additional User Instructions: ${userPrompt || "Make it look high-end and commercial."}
-    
+
     Requirements:
     - The output must look like a finished marketing asset.
     - Maintain the product's integrity but blend it into the scene.
@@ -61,7 +71,8 @@ export const generateBannerWithGemini = async (
                     mimeType: productImage.mimeType,
                     data: cleanProdBase64
                 }
-            }
+            },
+            ...cleanExtras.map(p => ({ inlineData: { mimeType: p.mimeType, data: p.data } }))
         ]
       },
       config: {

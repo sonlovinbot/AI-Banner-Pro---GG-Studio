@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Layers, Wand2, Settings2, AlertCircle, Cpu, Maximize2, Type, ArrowLeft, Key, Zap, FolderOpen, Trash2, X, Palette, Hash } from 'lucide-react';
-import { UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandSnippet, BrandProject } from '../types';
+import { Layers, Wand2, Settings2, AlertCircle, Cpu, Maximize2, Type, ArrowLeft, Key, Zap, FolderOpen, Trash2, X, Palette, Hash, Plus, Megaphone, ListPlus, Save } from 'lucide-react';
+import { UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandSnippet, BrandProject, VotedBanner } from '../types';
 import { ImageUploader } from './ImageUploader';
 import { ResultViewer } from './ResultViewer';
 import { generateBannerWithGemini } from '../services/geminiService';
@@ -17,8 +17,12 @@ import {
   addToBrandLibrary,
   removeFromBrandLibrary,
   getBrandProjects,
+  getVotedBanners,
+  addVotedBanner,
+  removeVotedBanner,
+  isVoted as isVotedStorage,
 } from '../services/storageService';
-import { compressForLibrary, libraryItemToUploadedImage } from '../services/imageUtils';
+import { compressForLibrary, libraryItemToUploadedImage, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
 import { ApiKeySettings } from './ApiKeySettings';
 
 declare global {
@@ -36,6 +40,72 @@ function getRandomItem<T>(arr: T[]): T {
 
 type BackendType = 'gemini' | 'coachio';
 
+type BannerType = 'general' | 'ads' | 'sale' | 'awareness' | 'software';
+
+const MAX_CONTENTS = 5;
+const MAX_VERSIONS_PER_CONTENT = 3;
+
+const BANNER_TYPE_OPTIONS: { id: BannerType; label: string; hint: string }[] = [
+  { id: 'general',   label: 'General',                hint: 'Banner tổng quát, không ràng buộc đặc thù.' },
+  { id: 'ads',       label: 'Performance Ads',        hint: 'Headline + value prop + CTA mạnh + logo nổi.' },
+  { id: 'sale',      label: 'Sale / Promo',           hint: 'Nhấn giảm giá + urgency + CTA gấp.' },
+  { id: 'awareness', label: 'Brand Awareness',        hint: 'Tối giản, lifestyle, brand identity dẫn dắt.' },
+  { id: 'software',  label: 'Software / Thumbnail',   hint: 'Screenshot / app preview, kiểu YouTube thumbnail — headline khổng lồ, contrast cao.' },
+];
+
+function getBannerTypePrompt(type: BannerType): string {
+  switch (type) {
+    case 'ads':
+      return [
+        'BANNER TYPE: Performance Ad (paid social / display).',
+        'Required elements:',
+        '- Bold scannable HEADLINE (3-7 words, biggest typography).',
+        '- Clear VALUE PROPOSITION under the headline (1 line, plain language).',
+        '- Prominent CALL-TO-ACTION button ("Shop Now", "Buy Now", "Learn More") in a solid high-contrast color.',
+        '- Brand logo visible (corner or near headline).',
+        '- Product as the undeniable focal point with crisp lighting.',
+        '- Strong visual hierarchy — fully readable in 2 seconds at thumbnail size.',
+        '- Avoid clutter and tiny text.',
+      ].join('\n');
+    case 'sale':
+      return [
+        'BANNER TYPE: Sale / Promotion ad.',
+        'Required elements:',
+        '- HUGE discount/offer badge (e.g. "-50%", "BUY 1 GET 1", "FREE SHIP") as the dominant text.',
+        '- URGENCY copy ("Today Only", "Limited Stock", "Ends Tonight").',
+        '- Clear CTA button.',
+        '- Bright attention-grabbing palette, high saturation.',
+        '- Product clearly shown but secondary to the offer.',
+      ].join('\n');
+    case 'awareness':
+      return [
+        'BANNER TYPE: Brand Awareness.',
+        'Required elements:',
+        '- Hero lifestyle composition, premium mood.',
+        '- Brand identity (logo + tagline) placed elegantly.',
+        '- Minimal copy — imagery carries the emotion.',
+        '- Soft aspirational lighting and a cohesive palette.',
+      ].join('\n');
+    case 'software':
+      return [
+        'BANNER TYPE: Software / App / SaaS showcase (YouTube-thumbnail energy).',
+        'Treat the PRODUCT IMAGE as a screenshot / UI / dashboard / app screen — NOT a physical object. Keep the screen pixels crisp; never blur or stylize the screen content.',
+        'Required elements:',
+        '- The SCREENSHOT is the dominant hero — present it on a device frame OR floating cleanly with a slight 3D tilt and a soft drop shadow.',
+        '- HUGE bold HEADLINE (2-5 words max, heavy sans-serif). Add a contrasting STROKE/OUTLINE on the text so it stays readable on any background.',
+        '- One ANNOTATION callout (a circle, arrow, marker, or highlight box) drawing attention to a specific feature in the screenshot.',
+        '- Brand / app NAME or LOGO placed clearly (corner or beside the headline).',
+        '- High-contrast solid color or vivid duotone gradient background — keep it clean, no busy textures.',
+        '- A small badge in a corner ("NEW", "FREE", "DEMO", "v2", "▶︎" play icon) to hint at curiosity / value.',
+        '- Reading order must work in 1-2 seconds at thumbnail size: headline → screenshot → badge.',
+        '- Avoid: tiny screenshots, low-contrast text, cluttered backgrounds, more than 6 words in the headline, photorealistic objects that hide the UI.',
+      ].join('\n');
+    case 'general':
+    default:
+      return '';
+  }
+}
+
 interface BannerToolProps {
   onNavigate: (page: AppPage) => void;
 }
@@ -45,6 +115,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
   const [userPrompt, setUserPrompt] = useState<string>("");
   const [brandContent, setBrandContent] = useState<string>("");
+  const [bannerType, setBannerType] = useState<BannerType>('general');
+  const [multiContent, setMultiContent] = useState<boolean>(false);
+  const [contents, setContents] = useState<string[]>([""]);
+  const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
   const [coachioModel, setCoachioModel] = useState<string>("google_image_gen_banana_pro");
@@ -71,6 +145,54 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   };
   const [brandProjects] = useState<BrandProject[]>(() => getBrandProjects());
   const [activeBrandId, setActiveBrandId] = useState<string>('');
+  const [votes, setVotes] = useState<VotedBanner[]>(() => getVotedBanners());
+
+  const libraryIdForVote = (bannerId: string) => `voted-${bannerId}`;
+
+  const toggleVote = async (banner: GeneratedBanner) => {
+    if (banner.status !== 'success' || !banner.imageUrl) return;
+    if (isVotedStorage(banner.id)) {
+      setVotes(removeVotedBanner(banner.id));
+      setRefLibrary(removeFromLibrary('ref', libraryIdForVote(banner.id)));
+      return;
+    }
+
+    // Mirror into the ref library so future generations can reuse it as a style reference.
+    try {
+      const upload = await dataUrlOrUrlToUploadedImage(banner.imageUrl, `liked-${banner.id}.png`);
+      if (upload) {
+        const { base64, mimeType } = await compressForLibrary(upload.file);
+        const item: LibraryImage = {
+          id: libraryIdForVote(banner.id),
+          base64,
+          mimeType,
+          fileName: `liked-banner-${banner.id}.jpg`,
+          addedAt: Date.now(),
+        };
+        setRefLibrary(addToLibrary('ref', item));
+      }
+    } catch (e) {
+      console.warn('Save voted banner to library failed', e);
+    }
+
+    addVotedBanner({
+      id: banner.id,
+      imageUrl: banner.imageUrl,
+      promptUsed: banner.promptUsed || '',
+      brandContent: brandContent || '',
+      bannerType,
+      aspectRatio,
+      model: backend === 'coachio' ? coachioModel : selectedModel,
+      votedAt: Date.now(),
+    });
+    setVotes(getVotedBanners());
+  };
+
+  const saveContentSnippet = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    setBrandLibrary(addToBrandLibrary(t));
+  };
 
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey = !!getGeminiApiKey() || (import.meta.env.VITE_GEMINI_API_KEY && import.meta.env.VITE_GEMINI_API_KEY !== 'your_api_key_here');
@@ -207,36 +329,45 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     placeholder: GeneratedBanner,
     selectedRef: UploadedImage,
     selectedProd: UploadedImage,
-    combinedPrompt: string
+    combinedPrompt: string,
+    contentForThis?: string,
+    extraReferences: UploadedImage[] = [],
   ) => {
     const startTime = Date.now();
     let imageUrl: string;
+    const brandContentToUse = contentForThis ?? brandContent;
 
     if (backend === 'coachio') {
       imageUrl = await generateBannerWithCoachio(
-        selectedRef, selectedProd, combinedPrompt, brandContent,
+        selectedRef, selectedProd, combinedPrompt, brandContentToUse,
         aspectRatio, imageSize, coachioModel,
-        (status) => setGenerationProgress(prev => ({ ...prev, [placeholder.id]: status }))
+        (status) => setGenerationProgress(prev => ({ ...prev, [placeholder.id]: status })),
+        extraReferences,
       );
     } else {
       imageUrl = await generateBannerWithGemini(
-        selectedRef, selectedProd, combinedPrompt, brandContent,
-        aspectRatio, selectedModel, imageSize
+        selectedRef, selectedProd, combinedPrompt, brandContentToUse,
+        aspectRatio, selectedModel, imageSize, extraReferences,
       );
     }
 
     const duration = (Date.now() - startTime) / 1000;
 
-    saveToHistory({
-      id: placeholder.id,
-      imageUrl,
-      promptUsed: combinedPrompt,
-      timestamp: Date.now(),
-      duration,
-      model: backend === 'coachio' ? coachioModel : selectedModel,
-      quality: imageSize,
-      aspectRatio,
-    });
+    // Defensive: never let history persistence sabotage a successful API result.
+    try {
+      saveToHistory({
+        id: placeholder.id,
+        imageUrl,
+        promptUsed: combinedPrompt,
+        timestamp: Date.now(),
+        duration,
+        model: backend === 'coachio' ? coachioModel : selectedModel,
+        quality: imageSize,
+        aspectRatio,
+      });
+    } catch (e) {
+      console.warn('saveToHistory failed (ignored, banner still returned)', e);
+    }
 
     return { imageUrl, duration };
   };
@@ -272,37 +403,68 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setIsGenerating(true);
     setGenerationProgress({});
 
-    if (brandContent.trim()) {
-      setBrandLibrary(addToBrandLibrary(brandContent));
+    // Build the list of contents to render
+    const contentsPlan: string[] = multiContent
+      ? contents.map(c => c.trim()).filter(Boolean)
+      : [brandContent.trim()];
+
+    // Multi mode requires at least one non-empty content
+    if (multiContent && contentsPlan.length === 0) {
+      setErrorMsg("Multi-content mode is on — vui lòng nhập ít nhất một nội dung.");
+      setIsGenerating(false);
+      return;
     }
 
-    const placeholders: GeneratedBanner[] = Array.from({ length: variantCount }).map(() => ({
-      id: Math.random().toString(36).substring(7),
-      imageUrl: '',
-      promptUsed: '',
-      status: 'loading',
-      timestamp: Date.now()
-    }));
+    // Single mode: still ok if empty (matches prior behavior of allowing empty brand content)
+    if (!multiContent && contentsPlan.length === 0) {
+      contentsPlan.push("");
+    }
 
-    setResults(placeholders);
+    // Persist non-empty contents into brand library
+    for (const c of contentsPlan) {
+      if (c) setBrandLibrary(addToBrandLibrary(c));
+    }
 
-    const promises = placeholders.map(async (placeholder) => {
+    const perContent = multiContent ? versionsPerContent : variantCount;
+
+    type Plan = { placeholder: GeneratedBanner; content: string };
+    const plan: Plan[] = [];
+    for (const content of contentsPlan) {
+      for (let i = 0; i < perContent; i++) {
+        plan.push({
+          placeholder: {
+            id: Math.random().toString(36).substring(7),
+            imageUrl: '',
+            promptUsed: '',
+            status: 'loading',
+            timestamp: Date.now(),
+          },
+          content,
+        });
+      }
+    }
+
+    setResults(plan.map(p => p.placeholder));
+
+    const typePrompt = getBannerTypePrompt(bannerType);
+
+    const promises = plan.map(async ({ placeholder, content }) => {
+      const selectedRef = getRandomItem(refImages) as UploadedImage;
+      const selectedProd = getRandomItem(prodImages) as UploadedImage;
+
+      const varietyPrompts = [
+        "Focus on clean lines and minimalism.",
+        "Use bold, high-contrast aesthetics.",
+        "Create a soft, elegant atmosphere.",
+        "Make it dynamic and energetic.",
+        "Ensure a balanced, professional composition."
+      ];
+      const randomNuance = getRandomItem(varietyPrompts);
+      const combinedPrompt = [userPrompt, randomNuance, typePrompt].filter(Boolean).join('\n');
+
       try {
-        const selectedRef = getRandomItem(refImages) as UploadedImage;
-        const selectedProd = getRandomItem(prodImages) as UploadedImage;
-
-        const varietyPrompts = [
-          "Focus on clean lines and minimalism.",
-          "Use bold, high-contrast aesthetics.",
-          "Create a soft, elegant atmosphere.",
-          "Make it dynamic and energetic.",
-          "Ensure a balanced, professional composition."
-        ];
-        const randomNuance = getRandomItem(varietyPrompts);
-        const combinedPrompt = `${userPrompt}. ${randomNuance}`;
-
         const { imageUrl, duration } = await generateSingle(
-          placeholder, selectedRef, selectedProd, combinedPrompt
+          placeholder, selectedRef, selectedProd, combinedPrompt, content
         );
 
         setResults(prev => prev.map(p =>
@@ -325,7 +487,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         }
 
         setResults(prev => prev.map(p =>
-          p.id === placeholder.id ? { ...p, status: 'error' } : p
+          p.id === placeholder.id
+            ? { ...p, status: 'error', refImage: selectedRef, prodImage: selectedProd, promptUsed: combinedPrompt }
+            : p
         ));
       }
     });
@@ -335,7 +499,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setGenerationProgress({});
   };
 
-  const handleRegenerate = async (id: string, adjustmentPrompt: string) => {
+  const handleRegenerate = async (id: string, adjustmentPrompt: string, extras: UploadedImage[] = []) => {
     const target = results.find(r => r.id === id);
     if (!target || !target.refImage || !target.prodImage) {
       setErrorMsg("Cannot regenerate: missing reference or product image.");
@@ -345,11 +509,15 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setResults(prev => prev.map(p => p.id === id ? { ...p, status: 'loading' } : p));
 
     try {
-      const combinedPrompt = `${target.promptUsed}. Adjustment: ${adjustmentPrompt}`;
+      const adj = adjustmentPrompt?.trim();
+      const extraNote = extras.length > 0
+        ? ` Use the ${extras.length} extra reference image${extras.length > 1 ? 's' : ''} as additional style/composition cues.`
+        : '';
+      const combinedPrompt = `${target.promptUsed}.${adj ? ` Adjustment: ${adj}.` : ''}${extraNote}`;
 
       const newPlaceholder = { ...target, id };
       const { imageUrl, duration } = await generateSingle(
-        newPlaceholder, target.refImage, target.prodImage, combinedPrompt
+        newPlaceholder, target.refImage, target.prodImage, combinedPrompt, undefined, extras
       );
 
       setResults(prev => prev.map(p =>
@@ -621,29 +789,47 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               </div>
             )}
 
-            {/* Variants Count */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-gray-400 flex items-center gap-1.5">
-                  <Hash size={14} /> Số bản tạo
-                </label>
-                <span className="text-[11px] text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded">
-                  {variantCount}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={1}
-                value={variantCount}
-                onChange={(e) => setVariantCount(Number(e.target.value))}
-                className="w-full accent-indigo-500"
-              />
-              <div className="flex justify-between text-[9px] text-gray-600 mt-0.5 px-0.5">
-                <span>1</span><span>5</span><span>10</span>
-              </div>
-            </div>
+            {/* Variants Count — meaning changes in multi-content mode */}
+            {(() => {
+              const nonEmptyContents = multiContent ? contents.filter(c => c.trim()).length : 0;
+              const effectiveContents = Math.max(1, nonEmptyContents);
+              const totalInMulti = effectiveContents * versionsPerContent;
+              return (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm text-gray-400 flex items-center gap-1.5">
+                      <Hash size={14} />
+                      {multiContent ? 'Phiên bản / content' : 'Số bản tạo'}
+                    </label>
+                    <span className="text-[11px] text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded">
+                      {multiContent ? versionsPerContent : variantCount}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={multiContent ? MAX_VERSIONS_PER_CONTENT : 10}
+                    step={1}
+                    value={multiContent ? versionsPerContent : variantCount}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (multiContent) setVersionsPerContent(n);
+                      else setVariantCount(n);
+                    }}
+                    className="w-full accent-indigo-500"
+                  />
+                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5 px-0.5">
+                    {multiContent ? (<><span>1</span><span>2</span><span>3</span></>) : (<><span>1</span><span>5</span><span>10</span></>)}
+                  </div>
+                  {multiContent && (
+                    <p className="text-[11px] text-indigo-300 mt-1.5 bg-indigo-500/5 border border-indigo-500/20 rounded px-2 py-1">
+                      Sẽ tạo <b>{totalInMulti}</b> banner ({effectiveContents} content × {versionsPerContent} phiên bản).
+                      {nonEmptyContents === 0 && ' Nhập ít nhất một content để bắt đầu.'}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Quality Selection */}
             <div className="mb-4">
@@ -731,12 +917,101 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   </button>
                 </div>
               </div>
-              <textarea
-                value={brandContent}
-                onChange={(e) => setBrandContent(e.target.value)}
-                placeholder="e.g. 'Summer Sale 50% Off', Brand Name..."
-                className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
-              />
+              {!multiContent && (
+                <textarea
+                  value={brandContent}
+                  onChange={(e) => setBrandContent(e.target.value)}
+                  placeholder="e.g. 'Summer Sale 50% Off', Brand Name..."
+                  className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
+                />
+              )}
+
+              {multiContent && (
+                <div className="space-y-2">
+                  {contents.map((c, idx) => (
+                    <div key={idx} className="relative">
+                      <textarea
+                        value={c}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setContents(prev => prev.map((x, i) => (i === idx ? v : x)));
+                        }}
+                        placeholder={`Content #${idx + 1} — e.g. 'Hè rực rỡ, Sale 50%'`}
+                        className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 pr-9 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-16 resize-none"
+                      />
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500 font-mono bg-gray-900 px-1.5 py-0.5 rounded">#{idx + 1}</span>
+                        <button
+                          onClick={() => saveContentSnippet(c)}
+                          disabled={!c.trim()}
+                          className="text-gray-500 hover:text-emerald-300 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors"
+                          title="Lưu content này vào thư viện"
+                        >
+                          <Save size={14} />
+                        </button>
+                        {contents.length > 1 && (
+                          <button
+                            onClick={() => setContents(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-gray-500 hover:text-red-400 transition-colors"
+                            title="Xoá content"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setContents(prev => prev.length < MAX_CONTENTS ? [...prev, ""] : prev)}
+                    disabled={contents.length >= MAX_CONTENTS}
+                    className="w-full text-xs py-2 rounded-md border border-dashed border-gray-700 text-gray-400 hover:border-indigo-500/50 hover:text-indigo-300 hover:bg-indigo-500/5 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={14} /> Create new content
+                    <span className="text-[10px] text-gray-500 font-mono">{contents.length}/{MAX_CONTENTS}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Multi-content toggle */}
+              <label className="mt-2 flex items-start gap-2 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={multiContent}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setMultiContent(on);
+                    if (on && contents.every(c => !c.trim()) && brandContent.trim()) {
+                      setContents([brandContent.trim()]);
+                    }
+                  }}
+                  className="mt-0.5 accent-indigo-500"
+                />
+                <span className="text-[11px] text-gray-400 leading-snug">
+                  <span className="text-gray-300 font-medium flex items-center gap-1">
+                    <ListPlus size={12} /> Multi-content mode
+                  </span>
+                  Tạo tối đa {MAX_CONTENTS} nội dung khác nhau. Mỗi nội dung sẽ sinh {versionsPerContent} phiên bản.
+                </span>
+              </label>
+            </div>
+
+            {/* Banner Type */}
+            <div className="mb-4">
+              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+                <Megaphone size={14} /> Loại banner
+              </label>
+              <select
+                value={bannerType}
+                onChange={(e) => setBannerType(e.target.value as BannerType)}
+                className="w-full bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                {BANNER_TYPE_OPTIONS.map(o => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+                {BANNER_TYPE_OPTIONS.find(o => o.id === bannerType)?.hint}
+              </p>
             </div>
 
             <div className="mb-2">
@@ -772,7 +1047,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           >
             {isGenerating ? (
               <>
-                <Wand2 className="animate-spin" size={20} /> Generating {variantCount} variant{variantCount !== 1 ? 's' : ''}...
+                <Wand2 className="animate-spin" size={20} /> Generating {results.length || (multiContent ? Math.max(1, contents.filter(c => c.trim()).length) * versionsPerContent : variantCount)} variant{(results.length || 1) !== 1 ? 's' : ''}...
               </>
             ) : (
               <>
@@ -805,7 +1080,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
         <main className="flex-1 overflow-hidden relative">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-gray-950 to-gray-950 pointer-events-none" />
-          <ResultViewer results={results} onRegenerate={handleRegenerate} />
+          <ResultViewer
+            results={results}
+            onRegenerate={handleRegenerate}
+            onToggleVote={toggleVote}
+            isVoted={(id) => votes.some(v => v.id === id)}
+          />
         </main>
       </div>
 
@@ -829,7 +1109,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                 <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-md"><Type size={18} /></div>
                 <div>
                   <h3 className="text-base font-semibold text-white">Thư viện Brand Content</h3>
-                  <p className="text-xs text-gray-500">Bấm vào dòng để chèn vào ô brand · {brandLibrary.length}/10</p>
+                  <p className="text-xs text-gray-500">Bấm vào dòng để chèn vào ô brand · {brandLibrary.length}/30</p>
                 </div>
               </div>
               <button

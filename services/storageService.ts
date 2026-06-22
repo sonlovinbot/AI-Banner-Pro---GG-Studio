@@ -1,4 +1,4 @@
-import { BrandProject, BrandSnippet, HistoryItem, LibraryCategory, LibraryImage } from '../types';
+import { BrandProject, BrandSnippet, HistoryItem, LibraryCategory, LibraryImage, VotedBanner } from '../types';
 import { EMBEDDED_HISTORY } from '../data/embeddedHistory';
 
 const HISTORY_KEY = 'banner_pro_history';
@@ -7,8 +7,11 @@ const ACTIVE_BACKEND_STORAGE = 'active_backend';
 const LIBRARY_KEY_PREFIX = 'banner_pro_library_';
 const BRAND_LIBRARY_KEY = 'banner_pro_brand_library';
 const BRAND_PROJECTS_KEY = 'banner_pro_brand_projects';
-const MAX_LIBRARY_ITEMS = 10;
-const MAX_BRAND_ITEMS = 10;
+const VOTES_KEY = 'banner_pro_votes';
+const LEARN_FROM_VOTES_KEY = 'banner_pro_learn_from_votes';
+const MAX_LIBRARY_ITEMS = 30;
+const MAX_BRAND_ITEMS = 30;
+const MAX_VOTED_BANNERS = 30;
 
 export function getGeminiApiKey(): string {
   return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
@@ -39,16 +42,38 @@ export function getHistory(): HistoryItem[] {
   }
 }
 
+function persistHistory(items: HistoryItem[]): { saved: boolean; dropped: number } {
+  let trimmed = [...items];
+  let dropped = 0;
+  while (trimmed.length > 0) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+      return { saved: true, dropped };
+    } catch {
+      trimmed.pop();
+      dropped++;
+    }
+  }
+  try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  return { saved: false, dropped };
+}
+
 export function saveToHistory(item: HistoryItem): void {
   const history = getHistory();
   history.unshift(item);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  const { dropped } = persistHistory(history);
+  if (dropped > 0) {
+    console.warn(`[history] localStorage quota exceeded — dropped ${dropped} oldest item${dropped > 1 ? 's' : ''}.`);
+  }
 }
 
 export function saveBatchToHistory(items: HistoryItem[]): void {
   const history = getHistory();
   history.unshift(...items);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  const { dropped } = persistHistory(history);
+  if (dropped > 0) {
+    console.warn(`[history] localStorage quota exceeded — dropped ${dropped} oldest item${dropped > 1 ? 's' : ''}.`);
+  }
 }
 
 export function removeFromHistory(id: string): void {
@@ -243,4 +268,59 @@ export function deleteBrandProject(id: string): BrandProject[] {
   const next = getBrandProjects().filter(p => p.id !== id);
   try { localStorage.setItem(BRAND_PROJECTS_KEY, JSON.stringify(next)); } catch {}
   return next;
+}
+
+// ---------- Voted banners (training feedback) ----------
+
+export function getVotedBanners(): VotedBanner[] {
+  try {
+    const data = localStorage.getItem(VOTES_KEY);
+    return data ? (JSON.parse(data) as VotedBanner[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistVotes(items: VotedBanner[]): boolean {
+  let trimmed = [...items];
+  while (trimmed.length > 0) {
+    try {
+      localStorage.setItem(VOTES_KEY, JSON.stringify(trimmed));
+      return true;
+    } catch {
+      trimmed.pop();
+    }
+  }
+  try { localStorage.removeItem(VOTES_KEY); } catch {}
+  return false;
+}
+
+export function isVoted(id: string): boolean {
+  return getVotedBanners().some(v => v.id === id);
+}
+
+export function addVotedBanner(banner: VotedBanner): VotedBanner[] {
+  const all = getVotedBanners();
+  if (all.some(v => v.id === banner.id)) return all;
+  const next = [banner, ...all].slice(0, MAX_VOTED_BANNERS);
+  persistVotes(next);
+  return getVotedBanners();
+}
+
+export function removeVotedBanner(id: string): VotedBanner[] {
+  const next = getVotedBanners().filter(v => v.id !== id);
+  persistVotes(next);
+  return next;
+}
+
+export function clearVotedBanners(): void {
+  try { localStorage.removeItem(VOTES_KEY); } catch {}
+}
+
+export function getLearnFromVotes(): boolean {
+  return localStorage.getItem(LEARN_FROM_VOTES_KEY) === '1';
+}
+
+export function setLearnFromVotes(on: boolean): void {
+  localStorage.setItem(LEARN_FROM_VOTES_KEY, on ? '1' : '0');
 }

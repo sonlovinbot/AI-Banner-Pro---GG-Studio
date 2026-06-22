@@ -43,6 +43,69 @@ export async function compressForLibrary(
   }
 }
 
+export function extractImageFiles(items: DataTransferItemList | DataTransferItem[] | null | undefined): File[] {
+  if (!items) return [];
+  const out: File[] = [];
+  for (const item of items as any) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f && f.type.startsWith('image/')) out.push(f);
+    }
+  }
+  return out;
+}
+
+export function filesToFileList(files: File[]): FileList {
+  const dt = new DataTransfer();
+  files.forEach(f => dt.items.add(f));
+  return dt.files;
+}
+
+export async function fileToUploadedImage(file: File): Promise<UploadedImage> {
+  const base64 = await readFileAsDataURL(file);
+  return {
+    id: Math.random().toString(36).substring(7),
+    url: base64,
+    file,
+    base64,
+    mimeType: file.type || 'image/png',
+  };
+}
+
+export async function dataUrlOrUrlToUploadedImage(
+  src: string,
+  fileName = 'voted-banner.png',
+): Promise<UploadedImage | null> {
+  try {
+    let dataUrl = src;
+    let blob: Blob;
+    if (src.startsWith('data:')) {
+      blob = dataURLToBlob(src);
+    } else {
+      const res = await fetch(src);
+      blob = await res.blob();
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    }
+    const mimeType = blob.type || 'image/png';
+    const file = new File([blob], fileName, { type: mimeType });
+    return {
+      id: Math.random().toString(36).substring(7),
+      url: dataUrl,
+      file,
+      base64: dataUrl,
+      mimeType,
+    };
+  } catch (e) {
+    console.warn('dataUrlOrUrlToUploadedImage failed', e);
+    return null;
+  }
+}
+
 function dataURLToBlob(dataUrl: string): Blob {
   const [header, payload] = dataUrl.split(',');
   const mime = /data:(.*?);base64/.exec(header)?.[1] || 'image/png';

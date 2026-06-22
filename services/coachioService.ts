@@ -129,7 +129,8 @@ export async function generateBannerWithCoachio(
   aspectRatio: string,
   resolution: string,
   modelIdentifier: string,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  extraReferences: UploadedImage[] = []
 ): Promise<string> {
   const apiKey = getCoachioApiKey();
   if (!apiKey) {
@@ -142,17 +143,31 @@ export async function generateBannerWithCoachio(
   onProgress?.('Uploading product image...');
   const prodUrl = await uploadImageToCoachio(productImage.file, apiKey);
 
+  const extraUrls: string[] = [];
+  for (let i = 0; i < extraReferences.length; i++) {
+    onProgress?.(`Uploading extra reference ${i + 1}/${extraReferences.length}...`);
+    try {
+      const url = await uploadImageToCoachio(extraReferences[i].file, apiKey);
+      extraUrls.push(url);
+    } catch (e) {
+      console.warn('Skip extra reference upload', e);
+    }
+  }
+
   const fullPrompt = [
     'You are an expert graphic designer.',
     'Create a high-quality professional advertising banner.',
     'Follow the composition, color palette, lighting, and typography style of the reference image.',
     'Seamlessly integrate the product as the main focus.',
+    extraUrls.length > 0
+      ? `Additional reference images (${extraUrls.length}) follow the product — use them as supplementary style cues from approved past work or user tweaks.`
+      : '',
     brandContent ? `Brand Messaging: ${brandContent}` : '',
     userPrompt || 'Make it look high-end and commercial.',
   ].filter(Boolean).join('\n');
 
   onProgress?.('Submitting task...');
-  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl], aspectRatio, resolution, modelIdentifier, apiKey);
+  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl, ...extraUrls], aspectRatio, resolution, modelIdentifier, apiKey);
 
   onProgress?.('Generating...');
   const outputUrls = await pollTaskStatus(taskId, apiKey, onProgress);
