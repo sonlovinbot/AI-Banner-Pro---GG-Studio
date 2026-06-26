@@ -5,6 +5,7 @@ import { BannerTool } from './components/BannerTool';
 import { HistoryPage } from './components/HistoryPage';
 import { BrandStylePage } from './components/BrandStylePage';
 import { UGCStudio } from './components/UGCStudio';
+import { AdsManagerPage } from './components/AdsManagerPage';
 import { AppShell } from './components/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { initTheme } from './services/themeService';
@@ -22,6 +23,7 @@ export default function App() {
       case 'history':     return <HistoryPage onNavigate={setCurrentPage} />;
       case 'brand-style': return <BrandStylePage onNavigate={setCurrentPage} />;
       case 'ugc-studio':  return <UGCStudio onNavigate={setCurrentPage} />;
+      case 'ads-manager': return <AdsManagerPage onNavigate={setCurrentPage} />;
       default:            return <MenuPage onNavigate={setCurrentPage} />;
     }
   };

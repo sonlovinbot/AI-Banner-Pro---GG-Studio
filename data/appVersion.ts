@@ -1,9 +1,22 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.8.0';
-export const APP_VERSION_NAME = 'Full Cloud Migration';
+export const APP_VERSION = '0.9.0';
+export const APP_VERSION_NAME = 'Ads Manager — Sprint 1';
 export const APP_RELEASE_DATE = '2026-06-27';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.9.0',
+    date: '2026-06-27',
+    highlights: [
+      'Sidebar item Ads Manager + page với 4 tabs (Studio, Library, Queue, Analytics)',
+      'DB schema: ad_campaigns + ad_creatives + RLS policies',
+      'Services: adCampaignService + adCreativeService (CRUD Supabase)',
+      'Library tab: list/filter/search/clone/delete + creative editor đầy đủ ad fields',
+      'Creative Editor: primary text, headline, description, CTA dropdown, destination URL, audience free-text, campaign assign, tags, status',
+      'Nút "Send to Ads" trên History card → tự tạo creative draft link banner_id',
+      'Placeholder UI cho Studio/Queue/Analytics (sẽ ship Sprint 2-6)',
+    ],
+  },
   {
     version: '0.8.0',
     date: '2026-06-27',

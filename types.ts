@@ -40,7 +40,7 @@ export interface HistoryItem {
   version?: number;
 }
 
-export type AppPage = 'menu' | 'banner' | 'history' | 'brand-style' | 'ugc-studio';
+export type AppPage = 'menu' | 'banner' | 'history' | 'brand-style' | 'ugc-studio' | 'ads-manager';
 
 export type LibraryCategory = 'ref' | 'prod' | 'face';
 
@@ -76,6 +76,113 @@ export interface VotedBanner {
   aspectRatio: string;
   model: string;
   votedAt: number;
+}
+
+// ===== Ads Manager =====
+
+export type AdCampaignObjective =
+  | 'TRAFFIC'
+  | 'CONVERSIONS'
+  | 'REACH'
+  | 'ENGAGEMENT'
+  | 'MESSAGES'
+  | 'LEAD_GENERATION'
+  | 'APP_INSTALLS'
+  | 'BRAND_AWARENESS';
+
+export type AdCampaignStatus = 'draft' | 'active' | 'paused' | 'archived';
+
+export interface AdCampaign {
+  id: string;
+  name: string;
+  objective?: AdCampaignObjective;
+  dailyBudget?: number;          // VND
+  tags: string[];
+  status: AdCampaignStatus;
+  metaCampaignId?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type AdCreativeStatus =
+  | 'draft'
+  | 'ready'
+  | 'pushing'
+  | 'pushed'
+  | 'paused'
+  | 'failed'
+  | 'archived';
+
+export type AdCreativeSource = 'user' | 'agent' | 'meta-import' | 'clone';
+
+export type AdCTA =
+  | 'SHOP_NOW'
+  | 'LEARN_MORE'
+  | 'SIGN_UP'
+  | 'BUY_NOW'
+  | 'BOOK_TRAVEL'
+  | 'DOWNLOAD'
+  | 'CONTACT_US'
+  | 'GET_QUOTE'
+  | 'MESSAGE_PAGE'
+  | 'SUBSCRIBE'
+  | 'WATCH_MORE'
+  | 'GET_OFFER'
+  | 'INSTALL_MOBILE_APP'
+  | 'NO_BUTTON';
+
+export interface AdAudienceRef {
+  savedId?: string;
+  name?: string;
+  notes?: string;
+}
+
+export interface AdInsightSnapshot {
+  impressions?: number;
+  clicks?: number;
+  ctr?: number;
+  cpc?: number;
+  cpm?: number;
+  spend?: number;
+  conversions?: number;
+  revenue?: number;
+  roas?: number;
+}
+
+export interface AdCreative {
+  id: string;
+  campaignId?: string;
+  name?: string;
+  bannerId?: string;
+  // Copy
+  primaryText?: string;
+  headline?: string;
+  description?: string;
+  cta?: AdCTA;
+  destinationUrl?: string;
+  displayLink?: string;
+  // Audience
+  audienceRef?: AdAudienceRef;
+  // Status
+  status: AdCreativeStatus;
+  tags: string[];
+  // Source
+  source: AdCreativeSource;
+  importedFromMeta?: boolean;
+  originalMetaAdId?: string;
+  derivedFromCreativeId?: string;
+  // Meta linkage
+  metaAdId?: string;
+  metaCreativeId?: string;
+  metaAdsetId?: string;
+  pushedAt?: number;
+  pushError?: string;
+  // Performance
+  lastInsightAt?: number;
+  insights?: AdInsightSnapshot;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface BrandProject {

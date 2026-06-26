@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Home, Wand2, UserSquare2, Palette, Clock, Key, Menu, X,
-  Sun, Moon, Zap, ChevronLeft, LogOut, User as UserIcon,
+  Sun, Moon, Zap, ChevronLeft, LogOut, User as UserIcon, Megaphone,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { AppPage } from '../types';
@@ -31,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'ugc-studio',  label: 'UGC Studio',  icon: <UserSquare2 size={18} />,  accent: 'text-cyan-500' },
   { id: 'brand-style', label: 'Brand Style', icon: <Palette size={18} />,      accent: 'text-pink-500' },
   { id: 'history',     label: 'History',     icon: <Clock size={18} />,        accent: 'text-emerald-500' },
+  { id: 'ads-manager', label: 'Ads Manager', icon: <Megaphone size={18} />,    accent: 'text-amber-500' },
 ];
 
 const PAGE_TITLE: Record<AppPage, string> = {
@@ -39,6 +40,7 @@ const PAGE_TITLE: Record<AppPage, string> = {
   'ugc-studio':  'UGC Studio',
   'brand-style': 'Brand Style',
   'history':     'History',
+  'ads-manager': 'Ads Manager',
 };
 
 export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, user, children }) => {

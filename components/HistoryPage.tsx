@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2 } from 'lucide-react';
+import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2, Megaphone } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
 import { HistoryEditModal } from './HistoryEditModal';
 import { proxiedBannerUrl } from '../services/cdnProxy';
+import { createCreativeFromBanner } from '../services/adCreativeService';
 import {
   getHistory,
   getEmbeddedHistoryCount,
@@ -265,6 +266,20 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                     className="w-full h-full object-contain"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await createCreativeFromBanner(item);
+                          setToast({ kind: 'ok', msg: 'Đã tạo creative draft trong Ads Manager' });
+                        } catch (e: any) {
+                          setToast({ kind: 'err', msg: `Send to Ads lỗi: ${e?.message}` });
+                        }
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 p-2.5 rounded-full text-white transition-all"
+                      title="Send to Ads Manager (tạo creative draft)"
+                    >
+                      <Megaphone size={18} />
+                    </button>
                     <button
                       onClick={() => setEditTarget(item)}
                       className="bg-indigo-600 hover:bg-indigo-500 p-2.5 rounded-full text-white transition-all"
