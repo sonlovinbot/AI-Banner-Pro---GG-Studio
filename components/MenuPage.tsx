@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import {
   Wand2, Clock, ArrowRight, Palette, UserSquare2,
-  Tag, X, Sparkles, Image as ImageIcon, Box,
+  Tag, X, Sparkles, Image as ImageIcon, Box, Stethoscope, Loader2,
 } from 'lucide-react';
 import { AppPage } from '../types';
 import { getHistory, getBrandProjects, getActiveBackend, getGeminiApiKey } from '../services/storageService';
 import { getCoachioApiKey } from '../services/coachioService';
 import { APP_VERSION, APP_VERSION_NAME, APP_RELEASE_DATE, APP_CHANGELOG } from '../data/appVersion';
 import { proxiedBannerUrl } from '../services/cdnProxy';
+import { getSupabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { uploadToBunny } from '../services/bunnyService';
 
 interface MenuPageProps {
   onNavigate: (page: AppPage) => void;
@@ -64,8 +66,44 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const hasGoogleKey = !!getGeminiApiKey();
   const activeBackend = getActiveBackend();
   const [showChangelog, setShowChangelog] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<any | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
 
   const recent = getHistory().slice(0, 4);
+
+  const runDiagnostic = async () => {
+    setDiagBusy(true);
+    setDiagnostic(null);
+    const out: any = { steps: [] };
+    try {
+      out.steps.push({ name: 'Supabase configured (browser)', value: isSupabaseConfigured });
+
+      if (isSupabaseConfigured) {
+        const { data } = await getSupabase().auth.getSession();
+        const tok = data.session?.access_token;
+        out.steps.push({ name: 'Session token (browser)', value: tok ? `${tok.slice(0, 20)}...` : 'MISSING' });
+
+        const who = await fetch('/api/whoami', { headers: { Authorization: `Bearer ${tok || ''}` } });
+        const whoBody = await who.json().catch(() => ({}));
+        out.steps.push({ name: 'GET /api/whoami', value: { status: who.status, body: whoBody } });
+      }
+
+      // Try real Bunny upload with a 1px PNG
+      try {
+        const tiny = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='), c => c.charCodeAt(0));
+        const file = new File([tiny], 'diag.png', { type: 'image/png' });
+        const result = await uploadToBunny(file, 'misc');
+        out.steps.push({ name: 'POST /api/upload', value: result });
+      } catch (e: any) {
+        out.steps.push({ name: 'POST /api/upload', value: { error: e?.message } });
+      }
+    } catch (e: any) {
+      out.steps.push({ name: 'Unexpected error', value: e?.message });
+    } finally {
+      setDiagBusy(false);
+      setDiagnostic(out);
+    }
+  };
 
   return (
     <div className="px-6 py-8 lg:px-10 lg:py-10 max-w-7xl mx-auto w-full">
@@ -92,13 +130,38 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
             </button>
           </p>
         </div>
-        <button
-          onClick={() => onNavigate('banner')}
-          className="bg-brand hover:bg-brand-dark text-white font-medium px-5 py-2.5 rounded-md flex items-center gap-2 transition-colors shadow-pop"
-        >
-          <Wand2 size={16} /> Tạo banner mới
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runDiagnostic}
+            disabled={diagBusy}
+            className="bg-raised hover:bg-raised-2 text-fg border border-line-strong font-medium px-3 py-2.5 rounded-md flex items-center gap-2 transition-colors disabled:opacity-50"
+            title="Test Supabase + Bunny upload chain"
+          >
+            {diagBusy ? <Loader2 size={16} className="animate-spin" /> : <Stethoscope size={16} />}
+            Diagnostic
+          </button>
+          <button
+            onClick={() => onNavigate('banner')}
+            className="bg-brand hover:bg-brand-dark text-white font-medium px-5 py-2.5 rounded-md flex items-center gap-2 transition-colors shadow-pop"
+          >
+            <Wand2 size={16} /> Tạo banner mới
+          </button>
+        </div>
       </div>
+
+      {diagnostic && (
+        <div className="mb-6 bg-surface border border-line rounded-lg p-4 text-xs font-mono">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-fg font-semibold">Diagnostic Result</span>
+            <button onClick={() => setDiagnostic(null)} className="text-muted hover:text-fg">
+              <X size={14} />
+            </button>
+          </div>
+          <pre className="overflow-x-auto whitespace-pre-wrap text-muted">
+{JSON.stringify(diagnostic, null, 2)}
+          </pre>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
