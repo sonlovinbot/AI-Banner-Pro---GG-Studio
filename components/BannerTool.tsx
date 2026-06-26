@@ -10,8 +10,6 @@ import {
   getActiveBackend,
   setActiveBackend,
   getLibrary,
-  addToLibrary,
-  removeFromLibrary,
 } from '../services/storageService';
 import { addHistoryToCloud } from '../services/historyService';
 import {
@@ -27,7 +25,14 @@ import {
 import {
   listBrandProjectsFromCloud,
 } from '../services/brandProjectService';
-import { compressForLibrary, libraryItemToUploadedImage, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
+import {
+  listLibraryFromCloud,
+  addFileToLibrary,
+  addDataUrlToLibrary,
+  removeLibraryItemFromCloud,
+  bulkMigrateLibrary,
+} from '../services/imageLibraryService';
+import { libraryItemToUploadedImage, libraryItemToUploadedImageAsync, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import { ApiKeySettings } from './ApiKeySettings';
 
@@ -136,8 +141,17 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [backend, setBackendState] = useState<BackendType>(getActiveBackend());
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<Record<string, string>>({});
-  const [refLibrary, setRefLibrary] = useState<LibraryImage[]>(() => getLibrary('ref'));
-  const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>(() => getLibrary('prod'));
+  const [refLibrary, setRefLibrary] = useState<LibraryImage[]>([]);
+  const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>([]);
+
+  // Migrate counts surfaced in case user has legacy localStorage items
+  const localRefCount = getLibrary('ref').length;
+  const localProdCount = getLibrary('prod').length;
+
+  React.useEffect(() => {
+    listLibraryFromCloud('ref').then(setRefLibrary).catch(() => {});
+    listLibraryFromCloud('prod').then(setProdLibrary).catch(() => {});
+  }, []);
   const [brandLibrary, setBrandLibrary] = useState<BrandSnippet[]>([]);
   const [showBrandLibrary, setShowBrandLibrary] = useState(false);
   const [expandedBrandIds, setExpandedBrandIds] = useState<Set<string>>(new Set());
@@ -170,29 +184,30 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       try {
         await removeVoteFromCloud(banner.id);
         setVotes(prev => prev.filter(v => v.id !== banner.id));
-        setRefLibrary(removeFromLibrary('ref', libraryIdForVote(banner.id)));
+        // Remove from cloud ref library mirror (best effort)
+        const mirrorId = libraryIdForVote(banner.id);
+        const mirror = refLibrary.find(r => r.id === mirrorId);
+        if (mirror) {
+          await removeLibraryItemFromCloud(mirrorId).catch(() => {});
+          setRefLibrary(prev => prev.filter(r => r.id !== mirrorId));
+        }
       } catch (e) {
         console.warn('Remove vote failed', e);
       }
       return;
     }
 
-    // Mirror into the ref library so future generations can reuse it as a style reference.
+    // Mirror into the cloud ref library so future generations can reuse the
+    // liked banner as a style reference picker entry.
     try {
-      const upload = await dataUrlOrUrlToUploadedImage(proxiedBannerUrl(banner.imageUrl), `liked-${banner.id}.png`);
-      if (upload) {
-        const { base64, mimeType } = await compressForLibrary(upload.file);
-        const item: LibraryImage = {
-          id: libraryIdForVote(banner.id),
-          base64,
-          mimeType,
-          fileName: `liked-banner-${banner.id}.jpg`,
-          addedAt: Date.now(),
-        };
-        setRefLibrary(addToLibrary('ref', item));
-      }
+      const added = await addDataUrlToLibrary(
+        proxiedBannerUrl(banner.imageUrl),
+        `liked-banner-${banner.id}.jpg`,
+        'ref',
+      );
+      setRefLibrary(prev => [added, ...prev]);
     } catch (e) {
-      console.warn('Save voted banner to library failed', e);
+      console.warn('Save voted banner to cloud library failed', e);
     }
 
     try {
@@ -242,18 +257,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
   const persistToLibrary = async (file: File, category: LibraryCategory) => {
     try {
-      const { base64, mimeType } = await compressForLibrary(file);
-      const item: LibraryImage = {
-        id: Math.random().toString(36).substring(7),
-        base64,
-        mimeType,
-        fileName: file.name,
-        addedAt: Date.now(),
-      };
-      const next = addToLibrary(category, item);
-      if (category === 'ref') setRefLibrary(next); else setProdLibrary(next);
+      const item = await addFileToLibrary(file, category);
+      if (category === 'ref') setRefLibrary(prev => [item, ...prev]);
+      else setProdLibrary(prev => [item, ...prev]);
     } catch (err) {
-      console.error('Library save failed', err);
+      console.error('Library save to cloud failed', err);
     }
   };
 
@@ -290,15 +298,43 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     );
   };
 
-  const handleLibrarySelect = (item: LibraryImage, type: LibraryCategory) => {
-    const uploaded = libraryItemToUploadedImage(item);
-    if (type === 'ref') setRefImages(prev => [...prev, uploaded]);
-    else setProdImages(prev => [...prev, uploaded]);
+  const handleLibrarySelect = async (item: LibraryImage, type: LibraryCategory) => {
+    try {
+      const uploaded = await libraryItemToUploadedImageAsync(item);
+      if (type === 'ref') setRefImages(prev => [...prev, uploaded]);
+      else setProdImages(prev => [...prev, uploaded]);
+    } catch (e) {
+      console.warn('library select failed', e);
+      setErrorMsg('Không tải được ảnh từ thư viện');
+    }
   };
 
-  const handleLibraryDelete = (id: string, type: LibraryCategory) => {
-    const next = removeFromLibrary(type, id);
-    if (type === 'ref') setRefLibrary(next); else setProdLibrary(next);
+  const handleLibraryDelete = async (id: string, type: LibraryCategory) => {
+    try {
+      await removeLibraryItemFromCloud(id);
+      if (type === 'ref') setRefLibrary(prev => prev.filter(i => i.id !== id));
+      else setProdLibrary(prev => prev.filter(i => i.id !== id));
+    } catch (e) {
+      console.warn('library delete failed', e);
+    }
+  };
+
+  const migrateLocalLibraries = async () => {
+    try {
+      const refResult = await bulkMigrateLibrary(getLibrary('ref'), 'ref');
+      const prodResult = await bulkMigrateLibrary(getLibrary('prod'), 'prod');
+      const [r, p] = await Promise.all([
+        listLibraryFromCloud('ref'),
+        listLibraryFromCloud('prod'),
+      ]);
+      setRefLibrary(r);
+      setProdLibrary(p);
+      setErrorMsg(
+        `Migrate library: +${refResult.inserted} ref, +${prodResult.inserted} prod (bỏ qua ${refResult.skipped + prodResult.skipped} trùng)`,
+      );
+    } catch (e: any) {
+      setErrorMsg(`Migrate lỗi: ${e?.message || 'unknown'}`);
+    }
   };
 
   const handleBrandDelete = async (id: string) => {
@@ -331,17 +367,26 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     ];
     const productSource: LibraryImage[] = project.productReferences ?? [];
 
-    const styleExisting = new Set(refImages.map(i => i.base64));
-    const newStyle = styleSource
-      .filter(i => !styleExisting.has(i.base64))
-      .map(libraryItemToUploadedImage);
-    if (newStyle.length) setRefImages(prev => [...prev, ...newStyle]);
+    const refKeys = new Set(refImages.map(i => i.url || i.base64));
+    const prodKeys = new Set(prodImages.map(i => i.url || i.base64));
 
-    const prodExisting = new Set(prodImages.map(i => i.base64));
-    const newProd = productSource
-      .filter(i => !prodExisting.has(i.base64))
-      .map(libraryItemToUploadedImage);
-    if (newProd.length) setProdImages(prev => [...prev, ...newProd]);
+    Promise.all(
+      styleSource
+        .filter(i => !refKeys.has(i.url || i.base64 || ''))
+        .map(i => libraryItemToUploadedImageAsync(i).catch(e => { console.warn('apply brand ref load', e); return null; })),
+    ).then(items => {
+      const fresh = items.filter(Boolean) as any;
+      if (fresh.length) setRefImages(prev => [...prev, ...fresh]);
+    });
+
+    Promise.all(
+      productSource
+        .filter(i => !prodKeys.has(i.url || i.base64 || ''))
+        .map(i => libraryItemToUploadedImageAsync(i).catch(e => { console.warn('apply brand prod load', e); return null; })),
+    ).then(items => {
+      const fresh = items.filter(Boolean) as any;
+      if (fresh.length) setProdImages(prev => [...prev, ...fresh]);
+    });
 
     const composedBrand = [project.brandInfo, project.eventInfo].filter(s => s.trim()).join('\n');
     if (composedBrand) setBrandContent(composedBrand);
@@ -686,7 +731,18 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
           {/* Inputs */}
           <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4">Assets</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
+              {(localRefCount + localProdCount) > 0 && (
+                <button
+                  onClick={migrateLocalLibraries}
+                  className="text-[10px] text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
+                  title="Migrate local ref+prod library lên Bunny + Supabase"
+                >
+                  Migrate library ({localRefCount + localProdCount})
+                </button>
+              )}
+            </div>
             <ImageUploader
               title="Style Reference(s)"
               images={refImages}

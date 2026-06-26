@@ -12,11 +12,17 @@ import { generateUgcWithGemini } from '../services/geminiService';
 import { generateUgcWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
   getGeminiApiKey, getActiveBackend, setActiveBackend,
-  getLibrary, addToLibrary, removeFromLibrary,
+  getLibrary,
 } from '../services/storageService';
 import { addHistoryToCloud } from '../services/historyService';
 import { listBrandProjectsFromCloud } from '../services/brandProjectService';
-import { compressForLibrary, libraryItemToUploadedImage } from '../services/imageUtils';
+import {
+  listLibraryFromCloud,
+  addFileToLibrary,
+  removeLibraryItemFromCloud,
+  bulkMigrateLibrary,
+} from '../services/imageLibraryService';
+import { libraryItemToUploadedImageAsync } from '../services/imageUtils';
 import { ApiKeySettings } from './ApiKeySettings';
 
 function getRandomItem<T>(arr: T[]): T {
@@ -47,9 +53,18 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [, setGenerationProgress] = useState<Record<string, string>>({});
 
-  const [faceLibrary, setFaceLibrary] = useState<LibraryImage[]>(() => getLibrary('face'));
-  const [fashionLibrary, setFashionLibrary] = useState<LibraryImage[]>(() => getLibrary('ref'));
-  const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>(() => getLibrary('prod'));
+  const [faceLibrary, setFaceLibrary] = useState<LibraryImage[]>([]);
+  const [fashionLibrary, setFashionLibrary] = useState<LibraryImage[]>([]);
+  const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>([]);
+  const localFaceCount = getLibrary('face').length;
+  const localFashionCount = getLibrary('ref').length;
+  const localProdCount = getLibrary('prod').length;
+
+  React.useEffect(() => {
+    listLibraryFromCloud('face').then(setFaceLibrary).catch(() => {});
+    listLibraryFromCloud('ref').then(setFashionLibrary).catch(() => {});
+    listLibraryFromCloud('prod').then(setProdLibrary).catch(() => {});
+  }, []);
   const [brandProjects, setBrandProjects] = useState<BrandProject[]>([]);
   React.useEffect(() => { listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {}); }, []);
   const [activeBrandId, setActiveBrandId] = useState<string>('');
@@ -71,16 +86,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
 
   const persistToLibrary = async (file: File, category: LibraryCategory) => {
     try {
-      const { base64, mimeType } = await compressForLibrary(file);
-      const item: LibraryImage = {
-        id: Math.random().toString(36).substring(7),
-        base64, mimeType, fileName: file.name, addedAt: Date.now(),
-      };
-      const next = addToLibrary(category, item);
-      if (category === 'face') setFaceLibrary(next);
-      else if (category === 'ref') setFashionLibrary(next);
-      else setProdLibrary(next);
-    } catch (e) { console.error('Library save failed', e); }
+      const item = await addFileToLibrary(file, category);
+      if (category === 'face') setFaceLibrary(prev => [item, ...prev]);
+      else if (category === 'ref') setFashionLibrary(prev => [item, ...prev]);
+      else setProdLibrary(prev => [item, ...prev]);
+    } catch (e) { console.error('Library save to cloud failed', e); }
   };
 
   const setterFor = (slot: 'face' | 'fashion' | 'prod') =>
@@ -116,16 +126,39 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     setterFor(slot)(prev => prev.filter(i => i.id !== id));
   };
 
-  const handleLibrarySelect = (item: LibraryImage, slot: 'face' | 'fashion' | 'prod') => {
-    setterFor(slot)(prev => [...prev, libraryItemToUploadedImage(item)]);
+  const handleLibrarySelect = async (item: LibraryImage, slot: 'face' | 'fashion' | 'prod') => {
+    try {
+      const uploaded = await libraryItemToUploadedImageAsync(item);
+      setterFor(slot)(prev => [...prev, uploaded]);
+    } catch (e) { console.warn('library select failed', e); }
   };
 
-  const handleLibraryDelete = (id: string, slot: 'face' | 'fashion' | 'prod') => {
-    const category = categoryFor(slot);
-    const next = removeFromLibrary(category, id);
-    if (slot === 'face') setFaceLibrary(next);
-    else if (slot === 'fashion') setFashionLibrary(next);
-    else setProdLibrary(next);
+  const handleLibraryDelete = async (id: string, slot: 'face' | 'fashion' | 'prod') => {
+    try {
+      await removeLibraryItemFromCloud(id);
+      if (slot === 'face') setFaceLibrary(prev => prev.filter(i => i.id !== id));
+      else if (slot === 'fashion') setFashionLibrary(prev => prev.filter(i => i.id !== id));
+      else setProdLibrary(prev => prev.filter(i => i.id !== id));
+    } catch (e) { console.warn('library delete failed', e); }
+  };
+
+  const migrateLocalLibraries = async () => {
+    try {
+      const f = await bulkMigrateLibrary(getLibrary('face'), 'face');
+      const s = await bulkMigrateLibrary(getLibrary('ref'), 'ref');
+      const p = await bulkMigrateLibrary(getLibrary('prod'), 'prod');
+      const [face, fashion, prod] = await Promise.all([
+        listLibraryFromCloud('face'),
+        listLibraryFromCloud('ref'),
+        listLibraryFromCloud('prod'),
+      ]);
+      setFaceLibrary(face);
+      setFashionLibrary(fashion);
+      setProdLibrary(prod);
+      setErrorMsg(`Migrate: +${f.inserted} face, +${s.inserted} fashion, +${p.inserted} prod`);
+    } catch (e: any) {
+      setErrorMsg(`Migrate lỗi: ${e?.message || 'unknown'}`);
+    }
   };
 
   const applyBrandProject = (projectId: string) => {
@@ -139,13 +172,26 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     ];
     const productSource: LibraryImage[] = project.productReferences ?? [];
 
-    const styleExisting = new Set(fashionImages.map(i => i.base64));
-    const newStyle = styleSource.filter(i => !styleExisting.has(i.base64)).map(libraryItemToUploadedImage);
-    if (newStyle.length) setFashionImages(prev => [...prev, ...newStyle]);
+    const styleKeys = new Set(fashionImages.map(i => i.url || i.base64));
+    const prodKeys = new Set(prodImages.map(i => i.url || i.base64));
 
-    const prodExisting = new Set(prodImages.map(i => i.base64));
-    const newProd = productSource.filter(i => !prodExisting.has(i.base64)).map(libraryItemToUploadedImage);
-    if (newProd.length) setProdImages(prev => [...prev, ...newProd]);
+    Promise.all(
+      styleSource
+        .filter(i => !styleKeys.has(i.url || i.base64 || ''))
+        .map(i => libraryItemToUploadedImageAsync(i).catch(() => null)),
+    ).then(items => {
+      const fresh = items.filter(Boolean) as any;
+      if (fresh.length) setFashionImages(prev => [...prev, ...fresh]);
+    });
+
+    Promise.all(
+      productSource
+        .filter(i => !prodKeys.has(i.url || i.base64 || ''))
+        .map(i => libraryItemToUploadedImageAsync(i).catch(() => null)),
+    ).then(items => {
+      const fresh = items.filter(Boolean) as any;
+      if (fresh.length) setProdImages(prev => [...prev, ...fresh]);
+    });
 
     const composedBrand = [project.brandInfo, project.eventInfo].filter(s => s.trim()).join('\n');
     if (composedBrand) setBrandContent(composedBrand);
@@ -378,7 +424,18 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
 
           {/* Assets */}
           <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4">Assets</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
+              {(localFaceCount + localFashionCount + localProdCount) > 0 && (
+                <button
+                  onClick={migrateLocalLibraries}
+                  className="text-[10px] text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
+                  title="Migrate face/fashion/product library lên cloud"
+                >
+                  Migrate library ({localFaceCount + localFashionCount + localProdCount})
+                </button>
+              )}
+            </div>
             <ImageUploader
               title="Face"
               images={faceImages}

@@ -80,3 +80,43 @@ export async function removeLibraryItemFromCloud(id: string): Promise<void> {
   const { error } = await getSupabase().from('library_images').delete().eq('id', id);
   if (error) throw error;
 }
+
+export async function bulkMigrateLibrary(
+  items: LibraryImage[],
+  category: LibraryCategory | 'logo',
+): Promise<{ inserted: number; skipped: number }> {
+  if (items.length === 0) return { inserted: 0, skipped: 0 };
+  let inserted = 0;
+  let skipped = 0;
+  for (const it of items) {
+    try {
+      const { data: exists } = await getSupabase()
+        .from('library_images').select('id').eq('id', it.id).maybeSingle();
+      if (exists) { skipped++; continue; }
+      if (it.base64) {
+        await addDataUrlToLibrary(it.base64, it.fileName || `lib-${it.id}.jpg`, category);
+        inserted++;
+      } else if (it.url) {
+        // already a URL — insert metadata only
+        const userId = await requireUserId();
+        const { error } = await getSupabase().from('library_images').insert({
+          id: it.id,
+          user_id: userId,
+          category,
+          url: it.url,
+          file_name: it.fileName || null,
+          mime_type: it.mimeType || null,
+          added_at: it.addedAt ? new Date(it.addedAt).toISOString() : new Date().toISOString(),
+        });
+        if (error) throw error;
+        inserted++;
+      } else {
+        skipped++;
+      }
+    } catch (e) {
+      console.warn('bulkMigrateLibrary skip', it.id, e);
+      skipped++;
+    }
+  }
+  return { inserted, skipped };
+}

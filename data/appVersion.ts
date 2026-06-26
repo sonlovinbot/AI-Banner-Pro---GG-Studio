@@ -1,9 +1,21 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.7.0';
-export const APP_VERSION_NAME = 'Brand Cloud Sync';
+export const APP_VERSION = '0.8.0';
+export const APP_VERSION_NAME = 'Full Cloud Migration';
 export const APP_RELEASE_DATE = '2026-06-27';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.8.0',
+    date: '2026-06-27',
+    highlights: [
+      'Image library (ref/prod/face) → Bunny + Supabase library_images',
+      'Upload ảnh user → tự đẩy Bunny CDN, lưu URL metadata Supabase',
+      'BannerTool + UGCStudio: nút "Migrate library" cho ảnh cũ localStorage',
+      'Voted banner mirror sang cloud ref library qua Bunny',
+      'Brand project apply: async fetch CDN refs cho cả style + product',
+      'libraryItemToUploadedImageAsync: tự fetch CDN URL → base64 cho Gemini',
+    ],
+  },
   {
     version: '0.7.0',
     date: '2026-06-27',
