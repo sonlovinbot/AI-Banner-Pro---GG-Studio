@@ -6,7 +6,6 @@ import { ResultViewer } from './ResultViewer';
 import { generateBannerWithGemini } from '../services/geminiService';
 import { generateBannerWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
-  saveToHistory,
   getGeminiApiKey,
   getActiveBackend,
   setActiveBackend,
@@ -17,11 +16,13 @@ import {
   addToBrandLibrary,
   removeFromBrandLibrary,
   getBrandProjects,
-  getVotedBanners,
-  addVotedBanner,
-  removeVotedBanner,
-  isVoted as isVotedStorage,
 } from '../services/storageService';
+import { addHistoryToCloud } from '../services/historyService';
+import {
+  listVotesFromCloud,
+  addVoteToCloud,
+  removeVoteFromCloud,
+} from '../services/votesService';
 import { compressForLibrary, libraryItemToUploadedImage, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import { ApiKeySettings } from './ApiKeySettings';
@@ -146,15 +147,27 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   };
   const [brandProjects] = useState<BrandProject[]>(() => getBrandProjects());
   const [activeBrandId, setActiveBrandId] = useState<string>('');
-  const [votes, setVotes] = useState<VotedBanner[]>(() => getVotedBanners());
+  const [votes, setVotes] = useState<VotedBanner[]>([]);
+
+  // Initial vote load from cloud
+  React.useEffect(() => {
+    listVotesFromCloud().then(setVotes).catch(() => {});
+  }, []);
 
   const libraryIdForVote = (bannerId: string) => `voted-${bannerId}`;
 
   const toggleVote = async (banner: GeneratedBanner) => {
     if (banner.status !== 'success' || !banner.imageUrl) return;
-    if (isVotedStorage(banner.id)) {
-      setVotes(removeVotedBanner(banner.id));
-      setRefLibrary(removeFromLibrary('ref', libraryIdForVote(banner.id)));
+    const already = votes.some(v => v.id === banner.id);
+
+    if (already) {
+      try {
+        await removeVoteFromCloud(banner.id);
+        setVotes(prev => prev.filter(v => v.id !== banner.id));
+        setRefLibrary(removeFromLibrary('ref', libraryIdForVote(banner.id)));
+      } catch (e) {
+        console.warn('Remove vote failed', e);
+      }
       return;
     }
 
@@ -176,17 +189,21 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       console.warn('Save voted banner to library failed', e);
     }
 
-    addVotedBanner({
-      id: banner.id,
-      imageUrl: banner.imageUrl,
-      promptUsed: banner.promptUsed || '',
-      brandContent: brandContent || '',
-      bannerType,
-      aspectRatio,
-      model: backend === 'coachio' ? coachioModel : selectedModel,
-      votedAt: Date.now(),
-    });
-    setVotes(getVotedBanners());
+    try {
+      const saved = await addVoteToCloud({
+        id: banner.id,
+        imageUrl: banner.imageUrl,
+        promptUsed: banner.promptUsed || '',
+        brandContent: brandContent || '',
+        bannerType,
+        aspectRatio,
+        model: backend === 'coachio' ? coachioModel : selectedModel,
+        votedAt: Date.now(),
+      });
+      setVotes(prev => [saved, ...prev]);
+    } catch (e) {
+      console.warn('Add vote failed', e);
+    }
   };
 
   const saveContentSnippet = (text: string) => {
@@ -354,9 +371,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
     const duration = (Date.now() - startTime) / 1000;
 
+    // Persist to Supabase + auto-upload Gemini base64 to Bunny.
     // Defensive: never let history persistence sabotage a successful API result.
+    let persistedImageUrl = imageUrl;
     try {
-      saveToHistory({
+      const saved = await addHistoryToCloud({
         id: placeholder.id,
         imageUrl,
         promptUsed: combinedPrompt,
@@ -366,11 +385,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         quality: imageSize,
         aspectRatio,
       });
+      persistedImageUrl = saved.imageUrl; // Bunny CDN URL if Gemini base64 was uploaded
     } catch (e) {
-      console.warn('saveToHistory failed (ignored, banner still returned)', e);
+      console.warn('addHistoryToCloud failed (banner still shown to user)', e);
     }
 
-    return { imageUrl, duration };
+    return { imageUrl: persistedImageUrl, duration };
   };
 
   const handleGenerate = async () => {

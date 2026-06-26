@@ -11,9 +11,10 @@ import { ResultViewer } from './ResultViewer';
 import { generateUgcWithGemini } from '../services/geminiService';
 import { generateUgcWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
-  saveToHistory, getGeminiApiKey, getActiveBackend, setActiveBackend,
+  getGeminiApiKey, getActiveBackend, setActiveBackend,
   getLibrary, addToLibrary, removeFromLibrary, getBrandProjects,
 } from '../services/storageService';
+import { addHistoryToCloud } from '../services/historyService';
 import { compressForLibrary, libraryItemToUploadedImage } from '../services/imageUtils';
 import { ApiKeySettings } from './ApiKeySettings';
 
@@ -176,17 +177,23 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
       );
     }
     const duration = (Date.now() - startTime) / 1000;
-    saveToHistory({
-      id: placeholder.id,
-      imageUrl,
-      promptUsed: combinedPrompt,
-      timestamp: Date.now(),
-      duration,
-      model: `UGC · ${backend === 'coachio' ? coachioModel : selectedModel}`,
-      quality: imageSize,
-      aspectRatio,
-    });
-    return { imageUrl, duration };
+    let persistedUrl = imageUrl;
+    try {
+      const saved = await addHistoryToCloud({
+        id: placeholder.id,
+        imageUrl,
+        promptUsed: combinedPrompt,
+        timestamp: Date.now(),
+        duration,
+        model: `UGC · ${backend === 'coachio' ? coachioModel : selectedModel}`,
+        quality: imageSize,
+        aspectRatio,
+      });
+      persistedUrl = saved.imageUrl;
+    } catch (e) {
+      console.warn('addHistoryToCloud (UGC) failed', e);
+    }
+    return { imageUrl: persistedUrl, duration };
   };
 
   const handleGenerate = async () => {

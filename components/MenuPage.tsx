@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Wand2, Clock, ArrowRight, Palette, UserSquare2,
   Tag, X, Sparkles, Image as ImageIcon, Box, Stethoscope, Loader2,
 } from 'lucide-react';
-import { AppPage } from '../types';
-import { getHistory, getBrandProjects, getActiveBackend, getGeminiApiKey } from '../services/storageService';
+import { AppPage, HistoryItem } from '../types';
+import { getBrandProjects, getActiveBackend, getGeminiApiKey } from '../services/storageService';
 import { getCoachioApiKey } from '../services/coachioService';
+import { listHistoryFromCloud } from '../services/historyService';
 import { APP_VERSION, APP_VERSION_NAME, APP_RELEASE_DATE, APP_CHANGELOG } from '../data/appVersion';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import { getSupabase, isSupabaseConfigured } from '../services/supabaseClient';
@@ -60,7 +61,6 @@ const TOOLS: ToolCard[] = [
 ];
 
 export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
-  const historyCount = getHistory().length;
   const brandCount = getBrandProjects().length;
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey = !!getGeminiApiKey();
@@ -68,8 +68,14 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const [showChangelog, setShowChangelog] = useState(false);
   const [diagnostic, setDiagnostic] = useState<any | null>(null);
   const [diagBusy, setDiagBusy] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
-  const recent = getHistory().slice(0, 4);
+  useEffect(() => {
+    listHistoryFromCloud().then(setHistory).catch(() => {});
+  }, []);
+
+  const historyCount = history.length;
+  const recent = history.slice(0, 4);
 
   const runDiagnostic = async () => {
     setDiagBusy(true);

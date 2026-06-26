@@ -1,9 +1,20 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.5.0';
-export const APP_VERSION_NAME = 'Auth & Supabase Foundation';
+export const APP_VERSION = '0.6.0';
+export const APP_VERSION_NAME = 'Cloud Storage Migration';
 export const APP_RELEASE_DATE = '2026-06-23';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.6.0',
+    date: '2026-06-23',
+    highlights: [
+      'historyService + votesService: read/write Supabase, async',
+      'BannerTool/UGCStudio: tự upload Gemini base64 lên Bunny → lưu URL vào Supabase',
+      'HistoryPage: đọc cloud, badge "N cloud" + "N local", nút "Migrate local → cloud"',
+      'Toggle vote → ghi cloud + tự lưu vào ref library',
+      'Bulk migrate qua upsert ignoreDuplicates (snapshot 42 banner cũ vẫn import được)',
+    ],
+  },
   {
     version: '0.5.0',
     date: '2026-06-23',

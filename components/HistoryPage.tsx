@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2 } from 'lucide-react';
+import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2 } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
 import { HistoryEditModal } from './HistoryEditModal';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import {
   getHistory,
-  removeFromHistory,
-  clearHistory,
-  exportHistoryAsJson,
-  importHistoryFromJson,
   getEmbeddedHistoryCount,
-  importEmbeddedHistory,
-  ImportHistoryResult,
+  exportHistoryAsJson,
 } from '../services/storageService';
+import {
+  listHistoryFromCloud,
+  removeHistoryFromCloud,
+  clearHistoryInCloud,
+  bulkAddHistoryToCloud,
+} from '../services/historyService';
+import { EMBEDDED_HISTORY } from '../data/embeddedHistory';
 
 interface HistoryPageProps {
   onNavigate: (page: AppPage) => void;
@@ -24,12 +26,20 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [editTarget, setEditTarget] = useState<HistoryItem | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [migrating, setMigrating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const embeddedCount = getEmbeddedHistoryCount();
+  const localCount = getHistory().length;
 
-  useEffect(() => {
-    setItems(getHistory());
-  }, []);
+  const refresh = async () => {
+    setLoading(true);
+    const cloud = await listHistoryFromCloud();
+    setItems(cloud);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
 
   const childCount = (id: string) => items.filter(x => x.parentId === id).length;
 
@@ -39,18 +49,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const showResult = (result: ImportHistoryResult, source: string) => {
-    setItems(getHistory());
-    if (result.added === 0) {
-      setToast({ kind: 'ok', msg: `${source}: không có item mới (${result.skipped} đã tồn tại)` });
-    } else {
-      setToast({ kind: 'ok', msg: `${source}: +${result.added} item${result.skipped ? `, bỏ qua ${result.skipped} trùng` : ''}` });
-    }
-  };
-
   const handleExport = () => {
     if (items.length === 0) return;
-    const blob = new Blob([exportHistoryAsJson()], { type: 'application/json' });
+    const payload = JSON.stringify({
+      type: 'banner_pro_history', version: 1, exportedAt: Date.now(),
+      count: items.length, items,
+    }, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -66,31 +71,61 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const handleImportFile = async (file: File) => {
     try {
       const text = await file.text();
-      const result = importHistoryFromJson(text, 'merge');
-      showResult(result, `Import ${file.name}`);
+      const raw = JSON.parse(text);
+      const incoming: HistoryItem[] = Array.isArray(raw) ? raw : (raw.items || []);
+      const result = await bulkAddHistoryToCloud(incoming);
+      await refresh();
+      setToast({ kind: 'ok', msg: `Import ${file.name}: +${result.inserted} item, bỏ qua ${result.skipped} trùng` });
     } catch (e: any) {
       setToast({ kind: 'err', msg: `Import lỗi: ${e?.message || 'JSON không hợp lệ'}` });
     }
   };
 
-  const handleRestoreSnapshot = () => {
+  const handleRestoreSnapshot = async () => {
     try {
-      const result = importEmbeddedHistory('merge');
-      showResult(result, 'Snapshot');
+      const result = await bulkAddHistoryToCloud(EMBEDDED_HISTORY);
+      await refresh();
+      setToast({ kind: 'ok', msg: `Snapshot: +${result.inserted} item, bỏ qua ${result.skipped} trùng` });
     } catch (e: any) {
       setToast({ kind: 'err', msg: `Snapshot lỗi: ${e?.message || 'unknown'}` });
     }
   };
 
-  const handleRemove = (id: string) => {
-    removeFromHistory(id);
-    setItems(prev => prev.filter(item => item.id !== id));
+  const handleMigrateLocal = async () => {
+    setMigrating(true);
+    try {
+      const local = getHistory();
+      if (local.length === 0) {
+        setToast({ kind: 'ok', msg: 'Local không có banner cũ để migrate' });
+        return;
+      }
+      const result = await bulkAddHistoryToCloud(local);
+      await refresh();
+      setToast({ kind: 'ok', msg: `Migrate local: +${result.inserted} item lên cloud, bỏ qua ${result.skipped} trùng` });
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Migrate lỗi: ${e?.message || 'unknown'}` });
+    } finally {
+      setMigrating(false);
+    }
   };
 
-  const handleClearAll = () => {
-    clearHistory();
-    setItems([]);
-    setShowClearConfirm(false);
+  const handleRemove = async (id: string) => {
+    try {
+      await removeHistoryFromCloud(id);
+      setItems(prev => prev.filter(item => item.id !== id));
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Xoá lỗi: ${e?.message}` });
+    }
+  };
+
+  const handleClearAll = async () => {
+    try {
+      await clearHistoryInCloud();
+      setItems([]);
+      setShowClearConfirm(false);
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Clear lỗi: ${e?.message}` });
+    }
   };
 
   const formatDate = (ts: number) => {
@@ -115,12 +150,28 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             <div className="flex items-center gap-3">
               <Clock size={20} className="text-emerald-400" />
               <h1 className="text-lg font-bold text-fg">History</h1>
-              <span className="text-xs text-subtle bg-raised px-2 py-1 rounded-full">
-                {items.length} banner{items.length !== 1 ? 's' : ''}
+              <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                <Cloud size={11} /> {loading ? '...' : items.length} cloud
               </span>
+              {localCount > 0 && (
+                <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                  {localCount} local
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            {localCount > 0 && (
+              <button
+                onClick={handleMigrateLocal}
+                disabled={migrating}
+                className="text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-amber-500/20 disabled:opacity-50"
+                title={`Migrate ${localCount} banner cũ trong localStorage lên Supabase`}
+              >
+                {migrating ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
+                Migrate local ({localCount})
+              </button>
+            )}
             <input
               ref={fileInputRef}
               type="file"

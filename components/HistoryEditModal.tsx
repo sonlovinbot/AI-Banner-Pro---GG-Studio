@@ -8,7 +8,8 @@ import {
   dataUrlOrUrlToUploadedImage,
   readImagesFromClipboard,
 } from '../services/imageUtils';
-import { saveToHistory, getActiveBackend } from '../services/storageService';
+import { getActiveBackend } from '../services/storageService';
+import { addHistoryToCloud } from '../services/historyService';
 import { proxiedBannerUrl } from './../services/cdnProxy';
 import { generateBannerWithGemini } from '../services/geminiService';
 import { generateBannerWithCoachio, getCoachioApiKey } from '../services/coachioService';
@@ -130,8 +131,9 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
       const rootParentId = item.parentId || item.id;
       const nextVersion = (item.version ?? 1) + 1;
 
+      let persistedUrl = imageUrl;
       try {
-        saveToHistory({
+        const saved = await addHistoryToCloud({
           id: newId,
           imageUrl,
           promptUsed: combinedPrompt,
@@ -143,12 +145,13 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
           parentId: rootParentId,
           version: nextVersion,
         });
+        persistedUrl = saved.imageUrl;
         onUpdated?.();
       } catch (e) {
-        console.warn('saveToHistory failed (still showing result)', e);
+        console.warn('addHistoryToCloud failed (still showing result)', e);
       }
 
-      setGenerated({ imageUrl, promptUsed: combinedPrompt, duration });
+      setGenerated({ imageUrl: persistedUrl, promptUsed: combinedPrompt, duration });
       setPrompt('');
       setExtras([]);
     } catch (err: any) {
