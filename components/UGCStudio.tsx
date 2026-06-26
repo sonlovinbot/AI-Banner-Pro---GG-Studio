@@ -12,9 +12,10 @@ import { generateUgcWithGemini } from '../services/geminiService';
 import { generateUgcWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
   getGeminiApiKey, getActiveBackend, setActiveBackend,
-  getLibrary, addToLibrary, removeFromLibrary, getBrandProjects,
+  getLibrary, addToLibrary, removeFromLibrary,
 } from '../services/storageService';
 import { addHistoryToCloud } from '../services/historyService';
+import { listBrandProjectsFromCloud } from '../services/brandProjectService';
 import { compressForLibrary, libraryItemToUploadedImage } from '../services/imageUtils';
 import { ApiKeySettings } from './ApiKeySettings';
 
@@ -49,7 +50,8 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   const [faceLibrary, setFaceLibrary] = useState<LibraryImage[]>(() => getLibrary('face'));
   const [fashionLibrary, setFashionLibrary] = useState<LibraryImage[]>(() => getLibrary('ref'));
   const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>(() => getLibrary('prod'));
-  const [brandProjects] = useState<BrandProject[]>(() => getBrandProjects());
+  const [brandProjects, setBrandProjects] = useState<BrandProject[]>([]);
+  React.useEffect(() => { listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {}); }, []);
   const [activeBrandId, setActiveBrandId] = useState<string>('');
 
   const hasCoachioKey = !!getCoachioApiKey();

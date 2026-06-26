@@ -1,9 +1,22 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.6.0';
-export const APP_VERSION_NAME = 'Cloud Storage Migration';
-export const APP_RELEASE_DATE = '2026-06-23';
+export const APP_VERSION = '0.7.0';
+export const APP_VERSION_NAME = 'Brand Cloud Sync';
+export const APP_RELEASE_DATE = '2026-06-27';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.7.0',
+    date: '2026-06-27',
+    highlights: [
+      'Brand projects → Supabase brand_projects (multi-device sync)',
+      'Brand projects: logo + style/product refs tự upload Bunny khi lưu',
+      'Brand content snippets → Supabase brand_snippets',
+      'LibraryImage type hỗ trợ cả url (cloud) lẫn base64 (legacy local)',
+      'BrandStylePage: nút "Migrate local → cloud" cho brand projects cũ',
+      'Image upload service riêng (imageLibraryService) sẵn sàng cho phase sau',
+      'Compress Gemini base64 trước Bunny upload (fix Vercel 4.5MB body limit)',
+    ],
+  },
   {
     version: '0.6.0',
     date: '2026-06-23',

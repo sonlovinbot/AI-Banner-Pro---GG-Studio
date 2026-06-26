@@ -201,7 +201,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                         className="w-full h-full"
                         title="Use this image"
                       >
-                        <img src={item.base64} alt="library" className="w-full h-full object-cover" />
+                        <img src={item.url || item.base64} alt="library" className="w-full h-full object-cover" />
                       </button>
                       <button
                         type="button"

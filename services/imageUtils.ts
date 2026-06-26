@@ -222,6 +222,9 @@ function dataURLToBlob(dataUrl: string): Blob {
 }
 
 export function libraryItemToUploadedImage(item: LibraryImage): UploadedImage {
+  if (!item.base64) {
+    throw new Error('libraryItemToUploadedImage requires base64; use libraryItemToUploadedImageAsync for url-only items');
+  }
   const blob = dataURLToBlob(item.base64);
   const file = new File([blob], item.fileName || `library-${item.id}.jpg`, { type: item.mimeType || blob.type });
   return {
@@ -230,5 +233,29 @@ export function libraryItemToUploadedImage(item: LibraryImage): UploadedImage {
     file,
     base64: item.base64,
     mimeType: item.mimeType || file.type,
+  };
+}
+
+/** Same but works for cloud library items that only have a Bunny URL.
+ *  Fetches the image, converts to UploadedImage with base64 (needed for Gemini inlineData). */
+export async function libraryItemToUploadedImageAsync(item: LibraryImage): Promise<UploadedImage> {
+  if (item.base64) return libraryItemToUploadedImage(item);
+  if (!item.url) throw new Error('Library item has no base64 or url');
+  const res = await fetch(item.url);
+  const blob = await res.blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+  const mimeType = blob.type || item.mimeType || 'image/jpeg';
+  const file = new File([blob], item.fileName || `library-${item.id}.jpg`, { type: mimeType });
+  return {
+    id: Math.random().toString(36).substring(7),
+    url: dataUrl,
+    file,
+    base64: dataUrl,
+    mimeType,
   };
 }

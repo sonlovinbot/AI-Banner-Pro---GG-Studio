@@ -12,10 +12,6 @@ import {
   getLibrary,
   addToLibrary,
   removeFromLibrary,
-  getBrandLibrary,
-  addToBrandLibrary,
-  removeFromBrandLibrary,
-  getBrandProjects,
 } from '../services/storageService';
 import { addHistoryToCloud } from '../services/historyService';
 import {
@@ -23,6 +19,14 @@ import {
   addVoteToCloud,
   removeVoteFromCloud,
 } from '../services/votesService';
+import {
+  listSnippetsFromCloud,
+  addSnippetToCloud,
+  removeSnippetFromCloud,
+} from '../services/brandSnippetService';
+import {
+  listBrandProjectsFromCloud,
+} from '../services/brandProjectService';
 import { compressForLibrary, libraryItemToUploadedImage, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import { ApiKeySettings } from './ApiKeySettings';
@@ -134,7 +138,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [generationProgress, setGenerationProgress] = useState<Record<string, string>>({});
   const [refLibrary, setRefLibrary] = useState<LibraryImage[]>(() => getLibrary('ref'));
   const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>(() => getLibrary('prod'));
-  const [brandLibrary, setBrandLibrary] = useState<BrandSnippet[]>(() => getBrandLibrary());
+  const [brandLibrary, setBrandLibrary] = useState<BrandSnippet[]>([]);
   const [showBrandLibrary, setShowBrandLibrary] = useState(false);
   const [expandedBrandIds, setExpandedBrandIds] = useState<Set<string>>(new Set());
 
@@ -145,13 +149,15 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       return next;
     });
   };
-  const [brandProjects] = useState<BrandProject[]>(() => getBrandProjects());
+  const [brandProjects, setBrandProjects] = useState<BrandProject[]>([]);
   const [activeBrandId, setActiveBrandId] = useState<string>('');
   const [votes, setVotes] = useState<VotedBanner[]>([]);
 
-  // Initial vote load from cloud
+  // Initial cloud loads
   React.useEffect(() => {
     listVotesFromCloud().then(setVotes).catch(() => {});
+    listSnippetsFromCloud().then(setBrandLibrary).catch(() => {});
+    listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {});
   }, []);
 
   const libraryIdForVote = (bannerId: string) => `voted-${bannerId}`;
@@ -206,10 +212,15 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     }
   };
 
-  const saveContentSnippet = (text: string) => {
+  const saveContentSnippet = async (text: string) => {
     const t = text.trim();
     if (!t) return;
-    setBrandLibrary(addToBrandLibrary(t));
+    try {
+      const snippet = await addSnippetToCloud(t);
+      setBrandLibrary(prev => [snippet, ...prev.filter(s => s.content !== t)]);
+    } catch (e) {
+      console.warn('addSnippetToCloud failed', e);
+    }
   };
 
   const hasCoachioKey = !!getCoachioApiKey();
@@ -290,13 +301,23 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     if (type === 'ref') setRefLibrary(next); else setProdLibrary(next);
   };
 
-  const handleBrandDelete = (id: string) => {
-    setBrandLibrary(removeFromBrandLibrary(id));
+  const handleBrandDelete = async (id: string) => {
+    try {
+      await removeSnippetFromCloud(id);
+      setBrandLibrary(prev => prev.filter(s => s.id !== id));
+    } catch (e) {
+      console.warn('removeSnippetFromCloud failed', e);
+    }
   };
 
-  const handleBrandSave = () => {
+  const handleBrandSave = async () => {
     if (!brandContent.trim()) return;
-    setBrandLibrary(addToBrandLibrary(brandContent));
+    try {
+      const snippet = await addSnippetToCloud(brandContent);
+      setBrandLibrary(prev => [snippet, ...prev.filter(s => s.content !== brandContent.trim())]);
+    } catch (e) {
+      console.warn('addSnippetToCloud failed', e);
+    }
   };
 
   const applyBrandProject = (projectId: string) => {
@@ -442,9 +463,13 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       contentsPlan.push("");
     }
 
-    // Persist non-empty contents into brand library
+    // Persist non-empty contents into brand library (cloud) — fire and forget
     for (const c of contentsPlan) {
-      if (c) setBrandLibrary(addToBrandLibrary(c));
+      if (c) {
+        addSnippetToCloud(c)
+          .then(snippet => setBrandLibrary(prev => [snippet, ...prev.filter(s => s.content !== c)]))
+          .catch(e => console.warn('addSnippetToCloud (bulk) failed', e));
+      }
     }
 
     const perContent = multiContent ? versionsPerContent : variantCount;
