@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import {
   Home, Wand2, UserSquare2, Palette, Clock, Key, Menu, X,
-  Sun, Moon, Zap, ChevronLeft,
+  Sun, Moon, Zap, ChevronLeft, LogOut, User as UserIcon,
 } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 import { AppPage } from '../types';
 import { getActiveBackend } from '../services/storageService';
 import { getTheme, toggleTheme, Theme } from '../services/themeService';
+import { signOut } from '../services/authService';
 import { APP_VERSION } from '../data/appVersion';
 import { ApiKeySettings } from './ApiKeySettings';
 
 interface AppShellProps {
   currentPage: AppPage;
   onNavigate: (page: AppPage) => void;
+  user?: User;
   children: React.ReactNode;
 }
 
@@ -38,7 +41,7 @@ const PAGE_TITLE: Record<AppPage, string> = {
   'history':     'History',
 };
 
-export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, children }) => {
+export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, user, children }) => {
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showApiSettings, setShowApiSettings] = useState(false);
@@ -131,6 +134,30 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, chi
           </span>
           <span className="text-[10px] text-subtle">⌘+L</span>
         </button>
+
+        {user && (
+          <div className="border-t border-line pt-2 mt-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md">
+              <div className="w-7 h-7 rounded-full bg-brand/15 text-brand flex items-center justify-center text-xs font-bold">
+                {(user.user_metadata?.display_name || user.email || '?').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-medium text-fg truncate">
+                  {user.user_metadata?.display_name || user.email?.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-subtle truncate">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={async () => { try { await signOut(); } catch (e) { console.warn(e); } }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors"
+              title="Đăng xuất"
+            >
+              <LogOut size={15} />
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

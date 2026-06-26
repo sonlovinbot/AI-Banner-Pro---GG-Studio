@@ -1,9 +1,20 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.4.0';
-export const APP_VERSION_NAME = 'Sidebar Shell & Theme System';
+export const APP_VERSION = '0.5.0';
+export const APP_VERSION_NAME = 'Auth & Supabase Foundation';
 export const APP_RELEASE_DATE = '2026-06-23';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.5.0',
+    date: '2026-06-23',
+    highlights: [
+      'Supabase authentication (email + password, magic link)',
+      'AuthGate: login/signup UI + ConfigMissing screen khi chưa cấu hình env',
+      'User profile cluster + Đăng xuất ở footer sidebar',
+      'DB schema: profiles, banner_history, brand_projects, voted_banners + RLS policies',
+      'Auto-create profile trigger khi user signup',
+    ],
+  },
   {
     version: '0.4.0',
     date: '2026-06-23',
