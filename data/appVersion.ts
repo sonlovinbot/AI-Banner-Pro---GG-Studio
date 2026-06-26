@@ -1,9 +1,24 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.3.0';
-export const APP_VERSION_NAME = 'Multi-content & Edit Studio';
-export const APP_RELEASE_DATE = '2026-05-29';
+export const APP_VERSION = '0.4.0';
+export const APP_VERSION_NAME = 'Sidebar Shell & Theme System';
+export const APP_RELEASE_DATE = '2026-06-23';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.4.0',
+    date: '2026-06-23',
+    highlights: [
+      'Sidebar layout: AppShell với menu trái + dashboard mới',
+      'Light/Dark theme — CSS variables + tokens (canvas/surface/raised/fg/muted/line)',
+      'IBM Plex Sans + JetBrains Mono, brand color Vibe Orange (#F67D1C)',
+      'CDN proxy: rewrite coachio-prod.b-cdn.net → cdn.coachio.ai (fix FPT block)',
+      'Re-encode ảnh sang PNG sạch (fix Coachio 415 khi edit từ history)',
+      'Default Coachio model = GPT Image 2',
+      'Nút "Dán" clipboard ở mọi upload (ImageUploader, EditModal, BrandStyle, ResultViewer)',
+      'Style ref + Product image: chỉ cần 1 trong 2 (không bắt buộc cả 2)',
+      'Toàn bộ button & text color migrate sang theme-aware tokens',
+    ],
+  },
   {
     version: '0.3.0',
     date: '2026-05-29',

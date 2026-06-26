@@ -73,34 +73,34 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl">
+      <div className="bg-surface border border-line rounded-2xl w-full max-w-lg shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
+        <div className="flex items-center justify-between p-6 border-b border-line">
           <div className="flex items-center gap-3">
             <div className="bg-orange-500/10 p-2 rounded-lg">
               <Key size={20} className="text-orange-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">API Settings</h2>
-              <p className="text-xs text-gray-500">Configure your API keys</p>
+              <h2 className="text-lg font-bold text-fg">API Settings</h2>
+              <p className="text-xs text-subtle">Configure your API keys</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
+            className="p-2 rounded-lg hover:bg-raised transition-colors text-muted hover:text-fg"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-800">
+        <div className="flex border-b border-line">
           <button
             onClick={() => setActiveTab('google')}
             className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
               activeTab === 'google'
                 ? 'text-indigo-400'
-                : 'text-gray-500 hover:text-gray-300'
+                : 'text-subtle hover:text-fg'
             }`}
           >
             <span className="flex items-center justify-center gap-2">
@@ -117,7 +117,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
             className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
               activeTab === 'coachio'
                 ? 'text-orange-400'
-                : 'text-gray-500 hover:text-gray-300'
+                : 'text-subtle hover:text-fg'
             }`}
           >
             <span className="flex items-center justify-center gap-2">
@@ -135,8 +135,8 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
         {activeTab === 'google' && (
           <>
             <div className="p-6 space-y-5">
-              <div className="bg-gray-950 border border-gray-800 rounded-lg p-4">
-                <p className="text-xs text-gray-400 leading-relaxed">
+              <div className="bg-canvas border border-line rounded-lg p-4">
+                <p className="text-xs text-muted leading-relaxed">
                   Enter your Google Gemini API key for direct Gemini backend generation.
                   This key is stored locally in your browser.
                 </p>
@@ -151,7 +151,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               </div>
 
               <div>
-                <label className="text-sm text-gray-400 mb-2 block">Google API Key</label>
+                <label className="text-sm text-muted mb-2 block">Google API Key</label>
                 <div className="relative">
                   <input
                     type={googleShowKey ? 'text' : 'password'}
@@ -161,11 +161,11 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
                       setGoogleSaved(false);
                     }}
                     placeholder="AIzaSy..."
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 pr-12 text-sm text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full bg-canvas border border-line rounded-lg px-4 py-3 pr-12 text-sm text-fg font-mono focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <button
                     onClick={() => setGoogleShowKey(!googleShowKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-gray-800 text-gray-500 hover:text-white transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-raised text-subtle hover:text-fg transition-colors"
                   >
                     {googleShowKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -180,7 +180,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               )}
             </div>
 
-            <div className="p-6 border-t border-gray-800 flex items-center gap-3">
+            <div className="p-6 border-t border-line flex items-center gap-3">
               {googleSaved && googleKey && (
                 <button
                   onClick={handleGoogleRemove}
@@ -205,8 +205,8 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
         {activeTab === 'coachio' && (
           <>
             <div className="p-6 space-y-5">
-              <div className="bg-gray-950 border border-gray-800 rounded-lg p-4">
-                <p className="text-xs text-gray-400 leading-relaxed">
+              <div className="bg-canvas border border-line rounded-lg p-4">
+                <p className="text-xs text-muted leading-relaxed">
                   Enter your Coachio API key to use the Coachio AI backend for banner generation.
                   You can get your API key from the Coachio Studio dashboard.
                 </p>
@@ -221,7 +221,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               </div>
 
               <div>
-                <label className="text-sm text-gray-400 mb-2 block">Coachio API Key</label>
+                <label className="text-sm text-muted mb-2 block">Coachio API Key</label>
                 <div className="relative">
                   <input
                     type={coachioShowKey ? 'text' : 'password'}
@@ -232,11 +232,11 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
                       setCoachioSaved(false);
                     }}
                     placeholder="lv_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 pr-12 text-sm text-white font-mono focus:outline-none focus:border-orange-500 transition-colors"
+                    className="w-full bg-canvas border border-line rounded-lg px-4 py-3 pr-12 text-sm text-fg font-mono focus:outline-none focus:border-orange-500 transition-colors"
                   />
                   <button
                     onClick={() => setCoachioShowKey(!coachioShowKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-gray-800 text-gray-500 hover:text-white transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md hover:bg-raised text-subtle hover:text-fg transition-colors"
                   >
                     {coachioShowKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -263,27 +263,27 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               )}
 
               {/* Credits Info */}
-              <div className="bg-gray-950 border border-gray-800 rounded-lg p-4">
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Credit Cost</h4>
+              <div className="bg-canvas border border-line rounded-lg p-4">
+                <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Credit Cost</h4>
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-gray-900 rounded-md p-2">
-                    <p className="text-white text-sm font-bold">3</p>
-                    <p className="text-[10px] text-gray-500">1K</p>
+                  <div className="bg-surface rounded-md p-2">
+                    <p className="text-fg text-sm font-bold">3</p>
+                    <p className="text-[10px] text-subtle">1K</p>
                   </div>
-                  <div className="bg-gray-900 rounded-md p-2">
-                    <p className="text-white text-sm font-bold">3</p>
-                    <p className="text-[10px] text-gray-500">2K</p>
+                  <div className="bg-surface rounded-md p-2">
+                    <p className="text-fg text-sm font-bold">3</p>
+                    <p className="text-[10px] text-subtle">2K</p>
                   </div>
-                  <div className="bg-gray-900 rounded-md p-2">
-                    <p className="text-white text-sm font-bold">4</p>
-                    <p className="text-[10px] text-gray-500">4K</p>
+                  <div className="bg-surface rounded-md p-2">
+                    <p className="text-fg text-sm font-bold">4</p>
+                    <p className="text-[10px] text-subtle">4K</p>
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-600 mt-2">Credits per generation (Nano Banana Pro)</p>
+                <p className="text-[10px] text-subtle mt-2">Credits per generation (Nano Banana Pro)</p>
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-800 flex items-center gap-3">
+            <div className="p-6 border-t border-line flex items-center gap-3">
               {coachioSaved && coachioKey && (
                 <button
                   onClick={handleCoachioRemove}
@@ -296,7 +296,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               <button
                 onClick={handleCoachioValidate}
                 disabled={!coachioKey.trim() || coachioStatus === 'validating'}
-                className="px-4 py-2.5 rounded-lg text-sm bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2.5 rounded-lg text-sm bg-raised text-fg hover:bg-raised-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Test Key
               </button>

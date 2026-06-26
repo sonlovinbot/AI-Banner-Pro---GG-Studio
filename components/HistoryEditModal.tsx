@@ -6,8 +6,10 @@ import {
   extractImageFiles,
   filesToFileList,
   dataUrlOrUrlToUploadedImage,
+  readImagesFromClipboard,
 } from '../services/imageUtils';
 import { saveToHistory, getActiveBackend } from '../services/storageService';
+import { proxiedBannerUrl } from './../services/cdnProxy';
 import { generateBannerWithGemini } from '../services/geminiService';
 import { generateBannerWithCoachio, getCoachioApiKey } from '../services/coachioService';
 
@@ -17,7 +19,7 @@ const ASPECT_OPTIONS = ['1:1', '9:16', '16:9', '4:3', '3:4', '4:5', '5:4'];
 const QUALITY_OPTIONS = ['1K', '2K', '4K'];
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3-pro-image-preview';
-const DEFAULT_COACHIO_MODEL = 'google_image_gen_banana_pro';
+const DEFAULT_COACHIO_MODEL = 'gpt_image_2';
 
 interface HistoryEditModalProps {
   item: HistoryItem;
@@ -64,7 +66,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
     setIsGenerating(true);
     setProgress('Preparing reference...');
 
-    const source = generated?.imageUrl || item.imageUrl;
+    const source = proxiedBannerUrl(generated?.imageUrl || item.imageUrl);
     const base = await dataUrlOrUrlToUploadedImage(source, `base-${item.id}.png`);
 
     if (!base) {
@@ -97,11 +99,19 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
       const start = Date.now();
       let imageUrl: string;
 
+      // Pick a model that matches the ACTIVE backend.
+      // The history item's recorded model might belong to the other backend.
+      const isItemCoachioModel = item.model === 'gpt_image_2' || item.model === 'google_image_gen_banana_pro';
+      const isItemGeminiModel = item.model?.startsWith('gemini');
+      const modelForBackend = backend === 'coachio'
+        ? (isItemCoachioModel ? item.model : DEFAULT_COACHIO_MODEL)
+        : (isItemGeminiModel ? item.model : DEFAULT_GEMINI_MODEL);
+
       if (backend === 'coachio') {
         setProgress('Calling Coachio...');
         imageUrl = await generateBannerWithCoachio(
           referenceImage, productImage, combinedPrompt, '',
-          aspectRatio, quality, item.model || DEFAULT_COACHIO_MODEL,
+          aspectRatio, quality, modelForBackend,
           (s) => setProgress(s),
           extraRefs,
         );
@@ -109,7 +119,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
         setProgress('Calling Gemini...');
         imageUrl = await generateBannerWithGemini(
           referenceImage, productImage, combinedPrompt, '',
-          aspectRatio, item.model || DEFAULT_GEMINI_MODEL, quality,
+          aspectRatio, modelForBackend, quality,
           extraRefs,
         );
       }
@@ -127,7 +137,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
           promptUsed: combinedPrompt,
           timestamp: Date.now(),
           duration,
-          model: item.model,
+          model: modelForBackend,
           quality,
           aspectRatio,
           parentId: rootParentId,
@@ -150,41 +160,41 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
     }
   };
 
-  const displayUrl = generated?.imageUrl || item.imageUrl;
+  const displayUrl = proxiedBannerUrl(generated?.imageUrl || item.imageUrl);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl"
+        className="bg-canvas border border-line rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-gray-900/60">
+        <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600/20 text-indigo-300 p-2 rounded-md border border-indigo-500/30">
               <Wand2 size={16} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
                 Edit banner
                 {item.version && item.version > 1 && (
                   <span className="text-[10px] bg-purple-500/10 text-purple-300 border border-purple-500/20 rounded-full px-2 py-0.5 font-mono">v{item.version}</span>
                 )}
               </h3>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-[11px] text-subtle">
                 Sửa prompt + thêm ảnh tham chiếu → tạo lại bằng backend đang active ({backend === 'coachio' ? 'Coachio' : 'Gemini'}).
                 {item.parentId && <span className="text-purple-300/80"> · Chỉnh sửa từ banner gốc <span className="font-mono">{item.parentId.slice(0,6)}</span></span>}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-md hover:bg-gray-800 text-gray-400 hover:text-white" aria-label="Close">
+          <button onClick={onClose} className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg" aria-label="Close">
             <X size={18} />
           </button>
         </header>
 
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
           {/* Left: preview */}
-          <div className="bg-gray-950 border-r border-gray-800 p-5 flex flex-col items-center gap-3 overflow-y-auto">
-            <div className="relative w-full max-w-[480px] aspect-square bg-gray-900 rounded-lg overflow-hidden border border-gray-800 flex items-center justify-center">
+          <div className="bg-canvas border-r border-line p-5 flex flex-col items-center gap-3 overflow-y-auto">
+            <div className="relative w-full max-w-[480px] aspect-square bg-surface rounded-lg overflow-hidden border border-line flex items-center justify-center">
               {isGenerating ? (
                 <div className="flex flex-col items-center gap-2 text-indigo-300 text-sm">
                   <RefreshCw size={28} className="animate-spin" />
@@ -208,7 +218,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-500 text-center max-w-[480px] leading-relaxed">
+            <p className="text-[11px] text-subtle text-center max-w-[480px] leading-relaxed">
               {item.aspectRatio} · {item.quality} · {item.model}
             </p>
           </div>
@@ -216,30 +226,43 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
           {/* Right: controls */}
           <div className="p-5 overflow-y-auto space-y-4">
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Prompt chỉnh sửa</label>
+              <label className="text-xs text-muted block mb-1">Prompt chỉnh sửa</label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="VD: đổi nền sang tông tím, headline đỏ to hơn, thêm CTA 'Mua ngay'..."
-                className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-indigo-500 h-24 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-indigo-500 h-24 resize-none"
               />
             </div>
 
             <div
               tabIndex={0}
               onPaste={handlePaste}
-              className="border-2 border-dashed border-gray-700 rounded-lg p-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="border-2 border-dashed border-line-strong rounded-lg p-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
               title="Click vùng này rồi Ctrl/Cmd+V để dán ảnh"
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-400">Ảnh tham chiếu thêm (tối đa {MAX_EXTRAS})</span>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={extras.length >= MAX_EXTRAS}
-                  className="text-[11px] flex items-center gap-1 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Upload size={11} /> Tải lên
-                </button>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <span className="text-xs text-muted">Ảnh tham chiếu thêm (tối đa {MAX_EXTRAS})</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={async () => {
+                      const files = await readImagesFromClipboard();
+                      if (files.length > 0) addExtraFiles(files);
+                    }}
+                    disabled={extras.length >= MAX_EXTRAS}
+                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded bg-raised hover:bg-raised-2 text-fg border border-line-strong disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Dán ảnh từ clipboard"
+                  >
+                    <Clipboard size={11} /> Dán
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={extras.length >= MAX_EXTRAS}
+                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Upload size={11} /> Tải lên
+                  </button>
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -250,16 +273,16 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                 />
               </div>
               {extras.length === 0 ? (
-                <div className="text-center text-gray-500 text-[11px] py-3 pointer-events-none flex flex-col items-center gap-1">
+                <div className="text-center text-subtle text-[11px] py-3 pointer-events-none flex flex-col items-center gap-1">
                   <span>Kéo / thả ảnh vào đây</span>
-                  <span className="inline-flex items-center gap-1 text-gray-600">
+                  <span className="inline-flex items-center gap-1 text-subtle">
                     hoặc <Clipboard size={10} /> Ctrl/Cmd+V để dán
                   </span>
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
                   {extras.map((ex) => (
-                    <div key={ex.id} className="relative aspect-square rounded-md overflow-hidden bg-gray-950 border border-gray-800">
+                    <div key={ex.id} className="relative aspect-square rounded-md overflow-hidden bg-canvas border border-line">
                       <img src={ex.url} alt="extra" className="w-full h-full object-cover" />
                       <button
                         onClick={() => setExtras(prev => prev.filter(x => x.id !== ex.id))}
@@ -271,13 +294,13 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                   ))}
                 </div>
               )}
-              <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+              <p className="text-[10px] text-subtle mt-1 leading-snug">
                 Ảnh đầu tiên sẽ thay vai trò <b>product</b>, các ảnh sau là style references bổ sung. Không upload gì thì ảnh banner gốc đóng vai cả 2.
               </p>
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Aspect Ratio</label>
+              <label className="text-xs text-muted block mb-1">Aspect Ratio</label>
               <div className="grid grid-cols-7 gap-1.5">
                 {ASPECT_OPTIONS.map(r => (
                   <button
@@ -286,7 +309,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                     className={`text-[11px] py-1.5 rounded-md border transition-all ${
                       aspectRatio === r
                         ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                        : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                     }`}
                   >
                     {r}
@@ -296,7 +319,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Chất lượng</label>
+              <label className="text-xs text-muted block mb-1">Chất lượng</label>
               <div className="grid grid-cols-3 gap-2">
                 {QUALITY_OPTIONS.map(q => (
                   <button
@@ -305,7 +328,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                     className={`text-xs py-2 rounded-md border transition-all ${
                       quality === q
                         ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                        : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                     }`}
                   >
                     {q}
@@ -326,7 +349,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
               disabled={isGenerating}
               className={`w-full py-3 rounded-lg font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all ${
                 isGenerating
-                  ? 'bg-gray-700 cursor-not-allowed opacity-60'
+                  ? 'bg-raised-2 cursor-not-allowed opacity-60 text-fg'
                   : backend === 'coachio'
                     ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500'
                     : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'

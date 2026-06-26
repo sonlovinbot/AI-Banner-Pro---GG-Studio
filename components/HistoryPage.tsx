@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2 } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
 import { HistoryEditModal } from './HistoryEditModal';
+import { proxiedBannerUrl } from '../services/cdnProxy';
 import {
   getHistory,
   removeFromHistory,
@@ -100,21 +101,21 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-slate-200 flex flex-col">
+    <div className="min-h-screen bg-canvas text-fg flex flex-col">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-20">
+      <header className="border-b border-line bg-surface/80 backdrop-blur-sm sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => onNavigate('menu')}
-              className="p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
+              className="p-2 rounded-lg hover:bg-raised transition-colors text-muted hover:text-fg"
             >
               <ArrowLeft size={20} />
             </button>
             <div className="flex items-center gap-3">
               <Clock size={20} className="text-emerald-400" />
-              <h1 className="text-lg font-bold text-white">History</h1>
-              <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full">
+              <h1 className="text-lg font-bold text-fg">History</h1>
+              <span className="text-xs text-subtle bg-raised px-2 py-1 rounded-full">
                 {items.length} banner{items.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -172,10 +173,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
       {/* Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
         {items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[60vh] text-gray-500">
-            <div className="w-20 h-20 border-4 border-gray-800 border-dashed rounded-xl mb-4 opacity-50"></div>
+          <div className="flex flex-col items-center justify-center h-[60vh] text-subtle">
+            <div className="w-20 h-20 border-4 border-line border-dashed rounded-xl mb-4 opacity-50"></div>
             <p className="text-lg mb-2">No history yet</p>
-            <p className="text-sm text-gray-600">Generated banners will appear here</p>
+            <p className="text-sm text-subtle">Generated banners will appear here</p>
             <div className="mt-6 flex flex-wrap gap-2 justify-center">
               <button
                 onClick={() => onNavigate('banner')}
@@ -204,11 +205,11 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             {items.map(item => (
               <div
                 key={item.id}
-                className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group hover:border-gray-700 transition-colors"
+                className="bg-surface border border-line rounded-xl overflow-hidden group hover:border-line-strong transition-colors"
               >
-                <div className="relative aspect-square bg-gray-950">
+                <div className="relative aspect-square bg-canvas">
                   <img
-                    src={item.imageUrl}
+                    src={proxiedBannerUrl(item.imageUrl)}
                     alt="Banner"
                     className="w-full h-full object-contain"
                   />
@@ -228,7 +229,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                       <Maximize2 size={18} />
                     </button>
                     <a
-                      href={item.imageUrl}
+                      href={proxiedBannerUrl(item.imageUrl)}
                       download={`banner-${item.id}.png`}
                       className="bg-emerald-600 hover:bg-emerald-500 p-2.5 rounded-full text-white transition-all"
                       title="Download"
@@ -244,8 +245,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                     </button>
                   </div>
                 </div>
-                <div className="p-3 border-t border-gray-800">
-                  <p className="text-[11px] text-gray-500 mb-1">{formatDate(item.timestamp)}</p>
+                <div className="p-3 border-t border-line">
+                  <p className="text-[11px] text-subtle mb-1">{formatDate(item.timestamp)}</p>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {item.version && item.version > 1 && (
                       <span
@@ -263,8 +264,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                         +{childCount(item.id)} edits
                       </span>
                     )}
-                    <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.aspectRatio}</span>
-                    <span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{item.quality}</span>
+                    <span className="text-[10px] bg-raised text-muted px-1.5 py-0.5 rounded">{item.aspectRatio}</span>
+                    <span className="text-[10px] bg-raised text-muted px-1.5 py-0.5 rounded">{item.quality}</span>
                     {item.model && (
                       <span
                         className="text-[10px] bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/20 truncate max-w-[120px]"
@@ -280,7 +281,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                     )}
                   </div>
                   {item.promptUsed && (
-                    <p className="text-[11px] text-gray-500 mt-2 line-clamp-2 leading-relaxed">{item.promptUsed}</p>
+                    <p className="text-[11px] text-subtle mt-2 line-clamp-2 leading-relaxed">{item.promptUsed}</p>
                   )}
                 </div>
               </div>
@@ -294,13 +295,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4">
           <button
             onClick={() => setSelectedImage(null)}
-            className="absolute top-4 right-4 text-gray-400 hover:text-white p-2 rounded-full hover:bg-gray-800 transition-colors"
+            className="absolute top-4 right-4 text-muted hover:text-fg p-2 rounded-full hover:bg-raised transition-colors"
           >
             <X size={32} />
           </button>
           <div className="max-w-[95vw] max-h-[90vh] relative">
             <img
-              src={selectedImage.imageUrl}
+              src={proxiedBannerUrl(selectedImage.imageUrl)}
               alt="Full View"
               className="max-w-full max-h-[90vh] object-contain rounded-md shadow-2xl"
             />
@@ -312,7 +313,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                 <Wand2 size={18} /> Edit
               </button>
               <a
-                href={selectedImage.imageUrl}
+                href={proxiedBannerUrl(selectedImage.imageUrl)}
                 download={`banner-full-${selectedImage.id}.png`}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
               >
@@ -350,18 +351,18 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
       {/* Clear Confirm Modal */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-sm w-full">
+          <div className="bg-surface border border-line rounded-xl p-6 max-w-sm w-full">
             <div className="flex items-center gap-3 mb-4">
               <AlertTriangle size={24} className="text-red-400" />
-              <h3 className="text-lg font-bold text-white">Clear All History?</h3>
+              <h3 className="text-lg font-bold text-fg">Clear All History?</h3>
             </div>
-            <p className="text-sm text-gray-400 mb-6">
+            <p className="text-sm text-muted mb-6">
               This will permanently delete all {items.length} saved banners. This action cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowClearConfirm(false)}
-                className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors text-sm"
+                className="px-4 py-2 rounded-lg bg-raised text-fg hover:bg-raised-2 transition-colors text-sm"
               >
                 Cancel
               </button>

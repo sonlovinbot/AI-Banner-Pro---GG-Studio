@@ -61,6 +61,30 @@ export function filesToFileList(files: File[]): FileList {
   return dt.files;
 }
 
+// Reads images directly from the OS clipboard via the Async Clipboard API.
+// Requires HTTPS or localhost + user gesture. Browser may prompt for permission
+// the first time. Returns [] silently on denial / no images.
+export async function readImagesFromClipboard(): Promise<File[]> {
+  try {
+    if (!navigator.clipboard || !('read' in navigator.clipboard)) return [];
+    const items = await navigator.clipboard.read();
+    const out: File[] = [];
+    for (const item of items) {
+      for (const type of item.types) {
+        if (type.startsWith('image/')) {
+          const blob = await item.getType(type);
+          const ext = (type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+          out.push(new File([blob], `pasted-${Date.now()}.${ext}`, { type }));
+        }
+      }
+    }
+    return out;
+  } catch (e) {
+    console.warn('Clipboard read failed', e);
+    return [];
+  }
+}
+
 export async function fileToUploadedImage(file: File): Promise<UploadedImage> {
   const base64 = await readFileAsDataURL(file);
   return {
@@ -72,18 +96,37 @@ export async function fileToUploadedImage(file: File): Promise<UploadedImage> {
   };
 }
 
+// Re-encode any source (data URL or http URL) to a clean PNG File.
+// Guarantees: filename ends in .png, MIME is image/png, bytes are a valid PNG.
+// Eliminates 415 from upstreams that sniff bytes vs declared MIME.
+async function reencodeAsPng(srcDataUrl: string, fileName: string): Promise<{ file: File; dataUrl: string; mimeType: string }> {
+  const img = await loadImage(srcDataUrl);
+  const w = Math.max(1, img.naturalWidth || img.width);
+  const h = Math.max(1, img.naturalHeight || img.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+  ctx.drawImage(img, 0, 0, w, h);
+  const pngDataUrl = canvas.toDataURL('image/png');
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Canvas toBlob returned null'))), 'image/png');
+  });
+  const safeName = (fileName.replace(/\.[a-zA-Z0-9]+$/, '') || 'image') + '.png';
+  const file = new File([blob], safeName, { type: 'image/png' });
+  return { file, dataUrl: pngDataUrl, mimeType: 'image/png' };
+}
+
 export async function dataUrlOrUrlToUploadedImage(
   src: string,
   fileName = 'voted-banner.png',
 ): Promise<UploadedImage | null> {
   try {
     let dataUrl = src;
-    let blob: Blob;
-    if (src.startsWith('data:')) {
-      blob = dataURLToBlob(src);
-    } else {
+    if (!src.startsWith('data:')) {
       const res = await fetch(src);
-      blob = await res.blob();
+      const blob = await res.blob();
       dataUrl = await new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
@@ -91,15 +134,33 @@ export async function dataUrlOrUrlToUploadedImage(
         r.readAsDataURL(blob);
       });
     }
-    const mimeType = blob.type || 'image/png';
-    const file = new File([blob], fileName, { type: mimeType });
-    return {
-      id: Math.random().toString(36).substring(7),
-      url: dataUrl,
-      file,
-      base64: dataUrl,
-      mimeType,
-    };
+
+    // Re-encode via canvas to guarantee a clean PNG payload that upstream
+    // image APIs (e.g. Coachio) will accept without 415 surprises.
+    try {
+      const { file, dataUrl: pngDataUrl, mimeType } = await reencodeAsPng(dataUrl, fileName);
+      return {
+        id: Math.random().toString(36).substring(7),
+        url: pngDataUrl,
+        file,
+        base64: pngDataUrl,
+        mimeType,
+      };
+    } catch (e) {
+      // Fall back to raw blob if canvas re-encoding fails (e.g. tainted canvas).
+      console.warn('reencodeAsPng failed, falling back to raw blob', e);
+      const blob = dataURLToBlob(dataUrl);
+      const mimeType = blob.type || 'image/png';
+      const safeName = (fileName.replace(/\.[a-zA-Z0-9]+$/, '') || 'image') + '.png';
+      const file = new File([blob], safeName, { type: mimeType });
+      return {
+        id: Math.random().toString(36).substring(7),
+        url: dataUrl,
+        file,
+        base64: dataUrl,
+        mimeType,
+      };
+    }
   } catch (e) {
     console.warn('dataUrlOrUrlToUploadedImage failed', e);
     return null;

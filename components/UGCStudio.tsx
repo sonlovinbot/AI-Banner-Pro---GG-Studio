@@ -35,7 +35,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   const [brandContent, setBrandContent] = useState<string>('');
   const [aspectRatio, setAspectRatio] = useState<string>('4:5');
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3-pro-image-preview');
-  const [coachioModel, setCoachioModel] = useState<string>('google_image_gen_banana_pro');
+  const [coachioModel, setCoachioModel] = useState<string>('gpt_image_2');
   const [imageSize, setImageSize] = useState<string>('1K');
   const [variantCount, setVariantCount] = useState<number>(4);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -302,13 +302,13 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     : { bg: 'bg-cyan-600', border: 'border-cyan-500' };
 
   return (
-    <div className="flex h-screen w-full bg-gray-950 text-slate-200 font-sans">
+    <div className="flex h-screen w-full bg-canvas text-fg font-sans">
       {/* Sidebar */}
-      <div className="w-80 sm:w-96 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col h-full overflow-hidden">
-        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
+      <div className="w-80 sm:w-96 flex-shrink-0 bg-surface border-r border-line flex flex-col h-full overflow-hidden">
+        <div className="p-6 border-b border-line flex items-center gap-3">
           <button
             onClick={() => onNavigate('menu')}
-            className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
+            className="p-2 rounded-lg hover:bg-raised text-muted hover:text-fg"
             title="Back to Menu"
           >
             <ArrowLeft size={20} />
@@ -317,7 +317,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             <UserSquare2 size={24} />
           </div>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-white tracking-tight">UGC Studio</h1>
+            <h1 className="text-xl font-bold text-fg tracking-tight">UGC Studio</h1>
             <p className="text-xs text-cyan-400 font-mono">Face-consistent</p>
           </div>
           <button
@@ -325,7 +325,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             className={`p-2 rounded-lg transition-colors ${
               hasCoachioKey
                 ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                : 'bg-raised text-muted hover:bg-raised-2 hover:text-white'
             }`}
             title="API Key Settings"
           >
@@ -336,7 +336,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Backend */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-3 flex items-center gap-2">
               <Zap size={14} /> Backend
             </h2>
             <div className="grid grid-cols-2 gap-2">
@@ -345,7 +345,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'gemini'
                     ? 'bg-cyan-600 border-cyan-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Gemini Direct
@@ -356,7 +356,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'coachio'
                     ? 'bg-orange-600 border-orange-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Coachio AI
@@ -365,11 +365,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="h-px bg-gray-800" />
+          <div className="h-px bg-raised" />
 
           {/* Assets */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Assets</h2>
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4">Assets</h2>
             <ImageUploader
               title="Face"
               images={faceImages}
@@ -399,23 +399,23 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             />
           </div>
 
-          <div className="h-px bg-gray-800" />
+          <div className="h-px bg-raised" />
 
           {/* Configuration */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4 flex items-center gap-2">
               <Settings2 size={14} /> Configuration
             </h2>
 
             {/* Brand */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                 <Palette size={14} /> Brand
               </label>
               {brandProjects.length === 0 ? (
                 <button
                   onClick={() => onNavigate('brand-style')}
-                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800 hover:border-pink-500/50 hover:text-pink-300 text-left transition-colors"
+                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-pink-500/50 hover:text-pink-300 text-left transition-colors"
                 >
                   + Tạo Brand Style để dùng nhanh
                 </button>
@@ -424,13 +424,13 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                   <select
                     value={activeBrandId}
                     onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-pink-500"
+                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-pink-500"
                   >
                     <option value="">— Không dùng brand —</option>
                     {brandProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                   {activeBrandId && (
-                    <button onClick={() => setActiveBrandId('')} className="p-2 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white" title="Bỏ chọn">
+                    <button onClick={() => setActiveBrandId('')} className="p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg" title="Bỏ chọn">
                       <X size={14} />
                     </button>
                   )}
@@ -441,7 +441,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             {/* Model */}
             {backend === 'gemini' && (
               <div className="mb-4">
-                <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
+                <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
                 <div className="grid grid-cols-1 gap-2">
                   {[
                     { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro' },
@@ -453,11 +453,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                         key={m.id}
                         onClick={() => setSelectedModel(m.id)}
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-cyan-600 border-cyan-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                          active ? 'bg-cyan-600 border-cyan-500 text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-cyan-100/80' : 'text-gray-500'}`}>{m.id}</div>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-cyan-100/80' : 'text-subtle'}`}>{m.id}</div>
                       </button>
                     );
                   })}
@@ -467,7 +467,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
 
             {backend === 'coachio' && (
               <div className="mb-4">
-                <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
+                <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
                 <div className="grid grid-cols-1 gap-2">
                   {[
                     { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
@@ -479,11 +479,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                         key={m.id}
                         onClick={() => setCoachioModel(m.id)}
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-orange-600 border-orange-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                          active ? 'bg-orange-600 border-orange-500 text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-orange-100/80' : 'text-gray-500'}`}>{m.id}</div>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-orange-100/80' : 'text-subtle'}`}>{m.id}</div>
                       </button>
                     );
                   })}
@@ -494,22 +494,22 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             {/* Variants */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-gray-400 flex items-center gap-1.5"><Hash size={14} /> Số bản tạo</label>
-                <span className="text-[11px] text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded">{variantCount}</span>
+                <label className="text-sm text-muted flex items-center gap-1.5"><Hash size={14} /> Số bản tạo</label>
+                <span className="text-[11px] text-fg font-mono bg-raised px-2 py-0.5 rounded">{variantCount}</span>
               </div>
               <input
                 type="range" min={1} max={10} step={1} value={variantCount}
                 onChange={(e) => setVariantCount(Number(e.target.value))}
                 className="w-full accent-cyan-500"
               />
-              <div className="flex justify-between text-[9px] text-gray-600 mt-0.5 px-0.5">
+              <div className="flex justify-between text-[9px] text-subtle mt-0.5 px-0.5">
                 <span>1</span><span>5</span><span>10</span>
               </div>
             </div>
 
             {/* Quality */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5"><Maximize2 size={14} /> Quality</label>
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Maximize2 size={14} /> Quality</label>
               <div className="grid grid-cols-3 gap-2">
                 {['1K', '2K', '4K'].map(size => {
                   const disabled = isResolutionDisabled(size);
@@ -521,10 +521,10 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                       disabled={disabled}
                       className={`text-xs py-2 rounded-md border transition-all ${
                         disabled
-                          ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
+                          ? 'bg-surface border-line text-subtle cursor-not-allowed opacity-50'
                           : active
                             ? `${accent.bg} ${accent.border} text-white`
-                            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                       }`}
                     >
                       {size}
@@ -536,7 +536,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
 
             {/* Aspect */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 block">Aspect Ratio</label>
+              <label className="text-sm text-muted mb-1 block">Aspect Ratio</label>
               <div className="grid grid-cols-3 gap-2">
                 {currentAspectRatios.map(r => {
                   const active = aspectRatio === r;
@@ -545,7 +545,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                       key={r}
                       onClick={() => setAspectRatio(r)}
                       className={`text-xs py-2 rounded-md border transition-all ${
-                        active ? `${accent.bg} ${accent.border} text-white` : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                        active ? `${accent.bg} ${accent.border} text-white` : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                       }`}
                     >
                       {r}
@@ -557,22 +557,22 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
 
             {/* Brand content */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5"><Type size={14} /> Brand Content</label>
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Type size={14} /> Brand Content</label>
               <textarea
                 value={brandContent}
                 onChange={(e) => setBrandContent(e.target.value)}
                 placeholder="Tên brand, slogan, tone of voice…"
-                className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-cyan-500 h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-cyan-500 h-20 resize-none"
               />
             </div>
 
             <div className="mb-2">
-              <label className="text-sm text-gray-400 mb-1 block">Prompt Adjustments</label>
+              <label className="text-sm text-muted mb-1 block">Prompt Adjustments</label>
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 placeholder="VD: ngồi quán cafe, ánh sáng tự nhiên, đang cầm sản phẩm…"
-                className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-cyan-500 h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-cyan-500 h-20 resize-none"
               />
             </div>
           </div>
@@ -585,13 +585,13 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           )}
         </div>
 
-        <div className="p-6 bg-gray-900 border-t border-gray-800">
+        <div className="p-6 bg-surface border-t border-line">
           <button
             onClick={handleGenerate}
             disabled={isGenerating}
             className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all ${
               isGenerating
-                ? 'bg-gray-700 cursor-not-allowed opacity-50'
+                ? 'bg-raised-2 cursor-not-allowed opacity-50 text-fg'
                 : backend === 'coachio'
                   ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500'
                   : 'bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500'
@@ -607,10 +607,10 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
       </div>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col h-full bg-gray-950 relative overflow-hidden">
-        <header className="h-16 flex items-center justify-between px-6 border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm z-10">
-          <h2 className="font-medium text-gray-300">UGC Workspace</h2>
-          <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex-1 flex flex-col h-full bg-canvas relative overflow-hidden">
+        <header className="h-16 flex items-center justify-between px-6 border-b border-line bg-surface/50 backdrop-blur-sm z-10">
+          <h2 className="font-medium text-fg">UGC Workspace</h2>
+          <div className="flex items-center gap-4 text-xs text-subtle">
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`} />
               {isGenerating ? 'Generating' : 'Ready'}

@@ -23,6 +23,7 @@ import {
   isVoted as isVotedStorage,
 } from '../services/storageService';
 import { compressForLibrary, libraryItemToUploadedImage, dataUrlOrUrlToUploadedImage } from '../services/imageUtils';
+import { proxiedBannerUrl } from '../services/cdnProxy';
 import { ApiKeySettings } from './ApiKeySettings';
 
 declare global {
@@ -121,7 +122,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
-  const [coachioModel, setCoachioModel] = useState<string>("google_image_gen_banana_pro");
+  const [coachioModel, setCoachioModel] = useState<string>("gpt_image_2");
   const [imageSize, setImageSize] = useState<string>("1K");
   const [variantCount, setVariantCount] = useState<number>(5);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -159,7 +160,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
     // Mirror into the ref library so future generations can reuse it as a style reference.
     try {
-      const upload = await dataUrlOrUrlToUploadedImage(banner.imageUrl, `liked-${banner.id}.png`);
+      const upload = await dataUrlOrUrlToUploadedImage(proxiedBannerUrl(banner.imageUrl), `liked-${banner.id}.png`);
       if (upload) {
         const { base64, mimeType } = await compressForLibrary(upload.file);
         const item: LibraryImage = {
@@ -373,8 +374,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   };
 
   const handleGenerate = async () => {
-    if (refImages.length === 0 || prodImages.length === 0) {
-      setErrorMsg("Please upload at least one Reference image and one Product image.");
+    if (refImages.length === 0 && prodImages.length === 0) {
+      setErrorMsg("Cần ít nhất 1 ảnh — Style Reference hoặc Product Image (không bắt buộc cả 2).");
       return;
     }
 
@@ -449,8 +450,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     const typePrompt = getBannerTypePrompt(bannerType);
 
     const promises = plan.map(async ({ placeholder, content }) => {
-      const selectedRef = getRandomItem(refImages) as UploadedImage;
-      const selectedProd = getRandomItem(prodImages) as UploadedImage;
+      // Either pool can be empty; fall back to the other so user can run
+      // with style-only or product-only inputs.
+      const refPool = refImages.length > 0 ? refImages : prodImages;
+      const prodPool = prodImages.length > 0 ? prodImages : refImages;
+      const selectedRef = getRandomItem(refPool) as UploadedImage;
+      const selectedProd = getRandomItem(prodPool) as UploadedImage;
 
       const varietyPrompts = [
         "Focus on clean lines and minimalism.",
@@ -566,31 +571,21 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   }, [coachioModel, backend]);
 
   return (
-    <div className="flex h-screen w-full bg-gray-950 text-slate-200 font-sans">
+    <div className="flex h-[calc(100vh-3.5rem)] w-full bg-canvas text-fg font-sans">
 
       {/* Sidebar Controls */}
-      <div className="w-80 sm:w-96 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col h-full overflow-hidden">
-        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
-          <button
-            onClick={() => onNavigate('menu')}
-            className="p-2 rounded-lg hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
-            title="Back to Menu"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div className="bg-indigo-600 p-2 rounded-lg text-white">
-            <Layers size={24} />
-          </div>
+      <div className="w-80 sm:w-96 flex-shrink-0 bg-surface border-r border-line flex flex-col h-full overflow-hidden">
+        <div className="px-5 py-4 border-b border-line flex items-center gap-3">
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-white tracking-tight">BannerClone</h1>
-            <p className="text-xs text-indigo-400 font-mono">Nano Banana Pro</p>
+            <h2 className="text-sm font-semibold text-fg">Controls</h2>
+            <p className="text-[11px] text-subtle">Style ref + Product → AI generate</p>
           </div>
           <button
             onClick={() => setShowApiKeySettings(true)}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-2 rounded-md transition-colors ${
               hasCoachioKey
                 ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                : 'bg-raised text-muted hover:bg-raised-2 hover:text-white'
             }`}
             title="API Key Settings"
           >
@@ -602,7 +597,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
           {/* Backend Selection */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-3 flex items-center gap-2">
               <Zap size={14} /> Backend
             </h2>
             <div className="grid grid-cols-2 gap-2">
@@ -611,7 +606,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'gemini'
                     ? 'bg-indigo-600 border-indigo-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Gemini Direct
@@ -630,7 +625,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'coachio'
                     ? 'bg-orange-600 border-orange-500 text-white'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Coachio AI
@@ -641,11 +636,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="h-px bg-gray-800" />
+          <div className="h-px bg-raised" />
 
           {/* Inputs */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Assets</h2>
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4">Assets</h2>
             <ImageUploader
               title="Style Reference(s)"
               images={refImages}
@@ -666,23 +661,23 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             />
           </div>
 
-          <div className="h-px bg-gray-800" />
+          <div className="h-px bg-raised" />
 
           {/* Configuration */}
           <div>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4 flex items-center gap-2">
               <Settings2 size={14} /> Configuration
             </h2>
 
             {/* Brand Selector */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                 <Palette size={14} /> Brand
               </label>
               {brandProjects.length === 0 ? (
                 <button
                   onClick={() => onNavigate('brand-style')}
-                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800 hover:border-pink-500/50 hover:text-pink-300 text-left transition-colors"
+                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-pink-500/50 hover:text-pink-300 text-left transition-colors"
                 >
                   + Tạo Brand Style để sử dụng nhanh
                 </button>
@@ -691,7 +686,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   <select
                     value={activeBrandId}
                     onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-pink-500"
+                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-pink-500"
                   >
                     <option value="">— Không dùng brand —</option>
                     {brandProjects.map(p => (
@@ -701,7 +696,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   {activeBrandId && (
                     <button
                       onClick={clearBrandSelection}
-                      className="p-2 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white"
+                      className="p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg"
                       title="Bỏ chọn brand"
                     >
                       <X size={14} />
@@ -709,7 +704,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   )}
                   <button
                     onClick={() => onNavigate('brand-style')}
-                    className="text-[11px] px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700"
+                    className="text-[11px] px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong"
                     title="Quản lý brand"
                   >
                     Quản lý
@@ -726,7 +721,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             {/* Model Selection (only for Gemini) */}
             {backend === 'gemini' && (
               <div className="mb-4">
-                <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+                <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                   <Cpu size={14} /> Model
                 </label>
                 <div className="grid grid-cols-1 gap-2">
@@ -742,11 +737,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
                           active
                             ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm'
-                            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium leading-tight">{model.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-indigo-100/80' : 'text-gray-500'}`}>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-indigo-100/80' : 'text-subtle'}`}>
                           {model.id}
                         </div>
                       </button>
@@ -759,7 +754,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             {/* Coachio model selection */}
             {backend === 'coachio' && (
               <div className="mb-4">
-                <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+                <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                   <Cpu size={14} /> Model
                 </label>
                 <div className="grid grid-cols-1 gap-2">
@@ -775,11 +770,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
                           active
                             ? 'bg-orange-600 border-orange-500 text-white shadow-sm'
-                            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium leading-tight">{model.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-orange-100/80' : 'text-gray-500'}`}>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-orange-100/80' : 'text-subtle'}`}>
                           {model.id}
                         </div>
                       </button>
@@ -797,11 +792,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               return (
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm text-gray-400 flex items-center gap-1.5">
+                    <label className="text-sm text-muted flex items-center gap-1.5">
                       <Hash size={14} />
                       {multiContent ? 'Phiên bản / content' : 'Số bản tạo'}
                     </label>
-                    <span className="text-[11px] text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded">
+                    <span className="text-[11px] text-fg font-mono bg-raised px-2 py-0.5 rounded">
                       {multiContent ? versionsPerContent : variantCount}
                     </span>
                   </div>
@@ -833,7 +828,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
             {/* Quality Selection */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                 <Maximize2 size={14} /> Quality
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -851,15 +846,15 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                       title={disabled ? `Not supported with aspect_ratio "${aspectRatio}"` : undefined}
                       className={`text-xs py-2 rounded-md border transition-all ${
                         disabled
-                          ? 'bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed opacity-50'
+                          ? 'bg-surface border-line text-gray-600 cursor-not-allowed opacity-50'
                           : active
                             ? `${accent.bg} ${accent.border} text-white`
-                            : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                       }`}
                     >
                       {size}
                       {backend === 'coachio' && (
-                        <span className={`block text-[9px] mt-0.5 ${active && !disabled ? 'text-white/70' : 'text-gray-500'}`}>{credit}</span>
+                        <span className={`block text-[9px] mt-0.5 ${active && !disabled ? 'text-white/70' : 'text-subtle'}`}>{credit}</span>
                       )}
                     </button>
                   );
@@ -868,7 +863,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
 
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 block">Aspect Ratio</label>
+              <label className="text-sm text-muted mb-1 block">Aspect Ratio</label>
               <div className="grid grid-cols-3 gap-2">
                 {currentAspectRatios.map(ratio => {
                   const active = aspectRatio === ratio;
@@ -879,7 +874,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                       className={`text-xs py-2 rounded-md border transition-all ${
                         active
                           ? `${accent.bg} ${accent.border} text-white`
-                          : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                          : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                       }`}
                     >
                       {ratio}
@@ -891,21 +886,21 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-gray-400 flex items-center gap-1.5">
+                <label className="text-sm text-muted flex items-center gap-1.5">
                   <Type size={14} /> Brand Content
                 </label>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={handleBrandSave}
                     disabled={!brandContent.trim()}
-                    className="text-[11px] px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="text-[11px] px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     title="Lưu nội dung này vào thư viện"
                   >
                     Lưu
                   </button>
                   <button
                     onClick={() => setShowBrandLibrary(true)}
-                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors"
+                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong transition-colors"
                     title="Mở thư viện brand content"
                   >
                     <FolderOpen size={11} /> Thư viện
@@ -922,7 +917,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   value={brandContent}
                   onChange={(e) => setBrandContent(e.target.value)}
                   placeholder="e.g. 'Summer Sale 50% Off', Brand Name..."
-                  className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
+                  className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
                 />
               )}
 
@@ -937,14 +932,14 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                           setContents(prev => prev.map((x, i) => (i === idx ? v : x)));
                         }}
                         placeholder={`Content #${idx + 1} — e.g. 'Hè rực rỡ, Sale 50%'`}
-                        className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 pr-9 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-16 resize-none"
+                        className="w-full bg-canvas border border-line rounded-md p-3 pr-9 text-sm text-fg focus:outline-none focus:border-indigo-500 transition-colors h-16 resize-none"
                       />
                       <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <span className="text-[10px] text-gray-500 font-mono bg-gray-900 px-1.5 py-0.5 rounded">#{idx + 1}</span>
+                        <span className="text-[10px] text-subtle font-mono bg-surface px-1.5 py-0.5 rounded">#{idx + 1}</span>
                         <button
                           onClick={() => saveContentSnippet(c)}
                           disabled={!c.trim()}
-                          className="text-gray-500 hover:text-emerald-300 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors"
+                          className="text-subtle hover:text-emerald-300 disabled:opacity-30 disabled:hover:text-subtle transition-colors"
                           title="Lưu content này vào thư viện"
                         >
                           <Save size={14} />
@@ -952,7 +947,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                         {contents.length > 1 && (
                           <button
                             onClick={() => setContents(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-gray-500 hover:text-red-400 transition-colors"
+                            className="text-subtle hover:text-red-400 transition-colors"
                             title="Xoá content"
                           >
                             <X size={14} />
@@ -964,10 +959,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   <button
                     onClick={() => setContents(prev => prev.length < MAX_CONTENTS ? [...prev, ""] : prev)}
                     disabled={contents.length >= MAX_CONTENTS}
-                    className="w-full text-xs py-2 rounded-md border border-dashed border-gray-700 text-gray-400 hover:border-indigo-500/50 hover:text-indigo-300 hover:bg-indigo-500/5 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full text-xs py-2 rounded-md border border-dashed border-line-strong text-muted hover:border-indigo-500/50 hover:text-indigo-300 hover:bg-indigo-500/5 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Plus size={14} /> Create new content
-                    <span className="text-[10px] text-gray-500 font-mono">{contents.length}/{MAX_CONTENTS}</span>
+                    <span className="text-[10px] text-subtle font-mono">{contents.length}/{MAX_CONTENTS}</span>
                   </button>
                 </div>
               )}
@@ -986,8 +981,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   }}
                   className="mt-0.5 accent-indigo-500"
                 />
-                <span className="text-[11px] text-gray-400 leading-snug">
-                  <span className="text-gray-300 font-medium flex items-center gap-1">
+                <span className="text-[11px] text-muted leading-snug">
+                  <span className="text-fg font-medium flex items-center gap-1">
                     <ListPlus size={12} /> Multi-content mode
                   </span>
                   Tạo tối đa {MAX_CONTENTS} nội dung khác nhau. Mỗi nội dung sẽ sinh {versionsPerContent} phiên bản.
@@ -997,30 +992,30 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
             {/* Banner Type */}
             <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-1 flex items-center gap-1.5">
+              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
                 <Megaphone size={14} /> Loại banner
               </label>
               <select
                 value={bannerType}
                 onChange={(e) => setBannerType(e.target.value as BannerType)}
-                className="w-full bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-indigo-500 transition-colors"
               >
                 {BANNER_TYPE_OPTIONS.map(o => (
                   <option key={o.id} value={o.id}>{o.label}</option>
                 ))}
               </select>
-              <p className="text-[11px] text-gray-500 mt-1 leading-snug">
+              <p className="text-[11px] text-subtle mt-1 leading-snug">
                 {BANNER_TYPE_OPTIONS.find(o => o.id === bannerType)?.hint}
               </p>
             </div>
 
             <div className="mb-2">
-              <label className="text-sm text-gray-400 mb-1 block">Prompt Adjustments (Optional)</label>
+              <label className="text-sm text-muted mb-1 block">Prompt Adjustments (Optional)</label>
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 placeholder="e.g. Make the background darker..."
-                className="w-full bg-gray-950 border border-gray-800 rounded-md p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
               />
             </div>
           </div>
@@ -1033,13 +1028,13 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           )}
         </div>
 
-        <div className="p-6 bg-gray-900 border-t border-gray-800">
+        <div className="p-6 bg-surface border-t border-line">
           <button
             onClick={handleGenerate}
             disabled={isGenerating}
             className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all transform ${
               isGenerating
-                ? 'bg-gray-700 cursor-not-allowed opacity-50'
+                ? 'bg-raised-2 cursor-not-allowed opacity-50 text-fg'
                 : backend === 'coachio'
                   ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 hover:scale-[1.02] active:scale-95'
                   : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 hover:scale-[1.02] active:scale-95'
@@ -1059,10 +1054,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full bg-gray-950 relative overflow-hidden">
-        <header className="h-16 flex items-center justify-between px-6 border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm z-10">
-          <h2 className="font-medium text-gray-300">Generated Workspace</h2>
-          <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex-1 flex flex-col h-full bg-canvas relative overflow-hidden">
+        <header className="h-16 flex items-center justify-between px-6 border-b border-line bg-surface/50 backdrop-blur-sm z-10">
+          <h2 className="font-medium text-fg">Generated Workspace</h2>
+          <div className="flex items-center gap-4 text-xs text-subtle">
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></span>
               {isGenerating ? 'Generating' : 'Ready'}
@@ -1079,7 +1074,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         </header>
 
         <main className="flex-1 overflow-hidden relative">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-gray-950 to-gray-950 pointer-events-none" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand/10 via-canvas to-canvas pointer-events-none" />
           <ResultViewer
             results={results}
             onRegenerate={handleRegenerate}
@@ -1101,20 +1096,20 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           onClick={() => setShowBrandLibrary(false)}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+            className="bg-surface border border-line-strong rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
               <div className="flex items-center gap-3">
                 <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-md"><Type size={18} /></div>
                 <div>
-                  <h3 className="text-base font-semibold text-white">Thư viện Brand Content</h3>
-                  <p className="text-xs text-gray-500">Bấm vào dòng để chèn vào ô brand · {brandLibrary.length}/30</p>
+                  <h3 className="text-base font-semibold text-fg">Thư viện Brand Content</h3>
+                  <p className="text-xs text-subtle">Bấm vào dòng để chèn vào ô brand · {brandLibrary.length}/30</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowBrandLibrary(false)}
-                className="p-2 rounded-md hover:bg-gray-800 text-gray-400 hover:text-white"
+                className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -1122,7 +1117,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               {brandLibrary.length === 0 ? (
-                <div className="text-center text-gray-500 text-sm py-16">
+                <div className="text-center text-subtle text-sm py-16">
                   Chưa có brand content nào được lưu.
                   <br />
                   <span className="text-xs">Nội dung sẽ được lưu khi bạn bấm "Lưu" hoặc khi sinh banner.</span>
@@ -1133,10 +1128,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                     const expanded = expandedBrandIds.has(item.id);
                     const isLong = item.content.length > 140 || (item.content.match(/\n/g)?.length ?? 0) >= 2;
                     return (
-                      <li key={item.id} className="bg-gray-950 border border-gray-800 hover:border-indigo-500/60 rounded-md transition-colors">
+                      <li key={item.id} className="bg-canvas border border-line hover:border-indigo-500/60 rounded-md transition-colors">
                         <div className="flex items-stretch gap-0">
                           <div
-                            className={`flex-1 p-3 text-sm text-gray-200 whitespace-pre-wrap break-words cursor-pointer ${
+                            className={`flex-1 p-3 text-sm text-fg whitespace-pre-wrap break-words cursor-pointer ${
                               expanded ? '' : 'line-clamp-3'
                             }`}
                             onClick={() => toggleBrandExpanded(item.id)}
@@ -1144,7 +1139,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                           >
                             {item.content}
                           </div>
-                          <div className="flex flex-col border-l border-gray-800">
+                          <div className="flex flex-col border-l border-line">
                             <button
                               type="button"
                               onClick={() => {
@@ -1159,7 +1154,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                             <button
                               type="button"
                               onClick={() => handleBrandDelete(item.id)}
-                              className="flex-1 px-3 text-gray-400 hover:bg-red-500/80 hover:text-white border-t border-gray-800 transition-colors"
+                              className="flex-1 px-3 text-muted hover:bg-red-500/80 hover:text-fg border-t border-line transition-colors"
                               title="Remove"
                             >
                               <Trash2 size={12} />
@@ -1170,7 +1165,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                           <button
                             type="button"
                             onClick={() => toggleBrandExpanded(item.id)}
-                            className="block w-full text-[10px] text-gray-500 hover:text-indigo-300 px-3 py-1 text-left border-t border-gray-800/50"
+                            className="block w-full text-[10px] text-subtle hover:text-indigo-300 px-3 py-1 text-left border-t border-line/50"
                           >
                             {expanded ? '↑ Thu gọn' : '↓ Xem thêm'}
                           </button>

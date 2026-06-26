@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Download, Maximize2, X, RefreshCw, Wand2, ImagePlus, Heart } from 'lucide-react';
+import { Download, Maximize2, X, RefreshCw, Wand2, ImagePlus, Heart, Clipboard } from 'lucide-react';
 import { GeneratedBanner, UploadedImage } from '../types';
-import { fileToUploadedImage, extractImageFiles } from '../services/imageUtils';
+import { fileToUploadedImage, extractImageFiles, readImagesFromClipboard } from '../services/imageUtils';
+import { proxiedBannerUrl } from '../services/cdnProxy';
 
 const MAX_REGEN_EXTRAS = 3;
 
@@ -56,8 +57,8 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
 
   if (results.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
-        <div className="w-24 h-24 border-4 border-gray-800 border-dashed rounded-xl mb-4 animate-pulse"></div>
+      <div className="h-full flex flex-col items-center justify-center text-subtle opacity-50">
+        <div className="w-24 h-24 border-4 border-line border-dashed rounded-xl mb-4 animate-pulse"></div>
         <p>Generated banners will appear here</p>
       </div>
     );
@@ -75,10 +76,10 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                 key={banner.id}
                 tabIndex={0}
                 onPaste={(e) => handlePasteOnCard(banner.id, e)}
-                className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl flex flex-col relative group focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                className="bg-surface border border-line rounded-xl overflow-hidden shadow-xl flex flex-col relative group focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                 title="Click vào card rồi Ctrl/Cmd+V để dán ảnh tham chiếu"
               >
-                <div className="relative w-full aspect-square bg-gray-950 flex items-center justify-center">
+                <div className="relative w-full aspect-square bg-canvas flex items-center justify-center">
                   {banner.status === 'loading' ? (
                     <div className="flex flex-col items-center gap-3">
                       <RefreshCw className="animate-spin text-indigo-500" size={32} />
@@ -100,7 +101,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                   ) : (
                     <>
                       <img
-                        src={banner.imageUrl}
+                        src={proxiedBannerUrl(banner.imageUrl)}
                         alt="Generated Banner"
                         className="w-full h-full object-contain"
                       />
@@ -113,7 +114,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                           <Maximize2 size={24} />
                         </button>
                         <a
-                          href={banner.imageUrl}
+                          href={proxiedBannerUrl(banner.imageUrl)}
                           download={`banner-clone-${banner.id}.png`}
                           className="bg-indigo-600 hover:bg-indigo-500 p-3 rounded-full text-white transition-all transform hover:scale-105 shadow-lg"
                           title="Download"
@@ -137,9 +138,9 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                     </>
                   )}
                 </div>
-                <div className="p-3 border-t border-gray-800 bg-gray-900 flex flex-col gap-2">
+                <div className="p-3 border-t border-line bg-surface flex flex-col gap-2">
                   <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-400 font-mono truncate">ID: {banner.id.slice(0, 8)}</p>
+                    <p className="text-xs text-muted font-mono truncate">ID: {banner.id.slice(0, 8)}</p>
                     {banner.duration && (
                       <span className="text-[10px] text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
                         {banner.duration.toFixed(1)}s
@@ -150,7 +151,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                   {banExtras.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {banExtras.map(ex => (
-                        <div key={ex.id} className="relative w-10 h-10 rounded border border-gray-700 overflow-hidden">
+                        <div key={ex.id} className="relative w-10 h-10 rounded border border-line-strong overflow-hidden">
                           <img src={ex.url} className="w-full h-full object-cover" alt="extra" />
                           <button
                             onClick={() => removeExtra(banner.id, ex.id)}
@@ -161,7 +162,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                           </button>
                         </div>
                       ))}
-                      <span className="text-[10px] text-gray-500 font-mono">{banExtras.length}/{MAX_REGEN_EXTRAS}</span>
+                      <span className="text-[10px] text-subtle font-mono">{banExtras.length}/{MAX_REGEN_EXTRAS}</span>
                     </div>
                   )}
 
@@ -172,7 +173,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                       value={adjustPrompts[banner.id] || ''}
                       onChange={(e) => handlePromptChange(banner.id, e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && submitRegenerate(banner.id)}
-                      className="flex-1 bg-gray-950 border border-gray-800 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      className="flex-1 bg-canvas border border-line rounded-md px-2 py-1.5 text-xs text-fg focus:outline-none focus:border-indigo-500 transition-colors"
                       disabled={banner.status === 'loading'}
                     />
                     <input
@@ -184,9 +185,20 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                       onChange={(e) => { handleExtraFiles(banner.id, e.target.files); e.target.value = ''; }}
                     />
                     <button
+                      onClick={async () => {
+                        const files = await readImagesFromClipboard();
+                        if (files.length > 0) handleExtraFiles(banner.id, files);
+                      }}
+                      disabled={banner.status === 'loading' || banExtras.length >= MAX_REGEN_EXTRAS}
+                      className="bg-raised hover:bg-raised-2 disabled:bg-surface disabled:text-subtle text-fg p-1.5 rounded-md transition-colors border border-line-strong"
+                      title="Dán ảnh tham chiếu từ clipboard"
+                    >
+                      <Clipboard size={14} />
+                    </button>
+                    <button
                       onClick={() => fileInputs.current[banner.id]?.click()}
                       disabled={banner.status === 'loading' || banExtras.length >= MAX_REGEN_EXTRAS}
-                      className="bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:text-gray-600 text-gray-300 p-1.5 rounded-md transition-colors border border-gray-700"
+                      className="bg-raised hover:bg-raised-2 disabled:bg-surface disabled:text-subtle text-fg p-1.5 rounded-md transition-colors border border-line-strong"
                       title={`Upload ảnh tham chiếu thêm (tối đa ${MAX_REGEN_EXTRAS})`}
                     >
                       <ImagePlus size={14} />
@@ -194,7 +206,7 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
                     <button
                       onClick={() => submitRegenerate(banner.id)}
                       disabled={banner.status === 'loading' || (!adjustPrompts[banner.id] && banExtras.length === 0)}
-                      className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-500 text-white p-1.5 rounded-md transition-colors"
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-raised disabled:text-subtle text-white p-1.5 rounded-md transition-colors"
                       title="Regenerate with adjustment"
                     >
                       {banner.status === 'loading' ? (
@@ -215,20 +227,20 @@ export const ResultViewer: React.FC<ResultViewerProps> = ({ results, onRegenerat
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4">
           <button
             onClick={() => setSelectedImage(null)}
-            className="absolute top-4 right-4 text-gray-400 hover:text-white p-2 rounded-full hover:bg-gray-800 transition-colors"
+            className="absolute top-4 right-4 text-muted hover:text-fg p-2 rounded-full hover:bg-raised transition-colors"
           >
             <X size={32} />
           </button>
 
           <div className="max-w-[95vw] max-h-[90vh] relative">
             <img
-              src={selectedImage.imageUrl}
+              src={proxiedBannerUrl(selectedImage.imageUrl)}
               alt="Full View"
               className="max-w-full max-h-[90vh] object-contain rounded-md shadow-2xl"
             />
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4">
               <a
-                href={selectedImage.imageUrl}
+                href={proxiedBannerUrl(selectedImage.imageUrl)}
                 download={`banner-full-${selectedImage.id}.png`}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
               >

@@ -1,15 +1,61 @@
 import React, { useState } from 'react';
-import { Layers, Wand2, Clock, ArrowRight, Key, Zap, Palette, UserSquare2, Tag, X } from 'lucide-react';
+import {
+  Wand2, Clock, ArrowRight, Palette, UserSquare2,
+  Tag, X, Sparkles, Image as ImageIcon, Box,
+} from 'lucide-react';
 import { AppPage } from '../types';
-import { getHistory, getBrandProjects } from '../services/storageService';
+import { getHistory, getBrandProjects, getActiveBackend, getGeminiApiKey } from '../services/storageService';
 import { getCoachioApiKey } from '../services/coachioService';
-import { getGeminiApiKey, getActiveBackend } from '../services/storageService';
-import { ApiKeySettings } from './ApiKeySettings';
 import { APP_VERSION, APP_VERSION_NAME, APP_RELEASE_DATE, APP_CHANGELOG } from '../data/appVersion';
+import { proxiedBannerUrl } from '../services/cdnProxy';
 
 interface MenuPageProps {
   onNavigate: (page: AppPage) => void;
 }
+
+interface ToolCard {
+  id: AppPage;
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  accent: string;       // tailwind text class
+  bgAccent: string;     // tailwind bg class
+}
+
+const TOOLS: ToolCard[] = [
+  {
+    id: 'banner',
+    title: 'Banner Tool',
+    description: 'Generate ad banners. Style ref + product → AI sinh nhiều variant.',
+    icon: <Wand2 size={20} />,
+    accent: 'text-brand',
+    bgAccent: 'bg-brand',
+  },
+  {
+    id: 'ugc-studio',
+    title: 'UGC Studio',
+    description: 'Face-consistent UGC. Khuôn mặt + fashion + product.',
+    icon: <UserSquare2 size={20} />,
+    accent: 'text-cyan-500',
+    bgAccent: 'bg-cyan-500',
+  },
+  {
+    id: 'brand-style',
+    title: 'Brand Style',
+    description: 'Lưu brand kit: logo, references, JSON prompt cho team.',
+    icon: <Palette size={20} />,
+    accent: 'text-pink-500',
+    bgAccent: 'bg-pink-500',
+  },
+  {
+    id: 'history',
+    title: 'History',
+    description: 'Xem & chỉnh sửa banner đã tạo. Edit prompt + ảnh ref.',
+    icon: <Clock size={20} />,
+    accent: 'text-emerald-500',
+    bgAccent: 'bg-emerald-500',
+  },
+];
 
 export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const historyCount = getHistory().length;
@@ -17,217 +63,140 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey = !!getGeminiApiKey();
   const activeBackend = getActiveBackend();
-  const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
 
+  const recent = getHistory().slice(0, 4);
+
   return (
-    <div className="min-h-screen bg-gray-950 text-slate-200 flex flex-col">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm">
-        <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="bg-indigo-600 p-3 rounded-xl text-white">
-              <Layers size={28} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">AI Banner Pro</h1>
-              <p className="text-sm text-indigo-400 font-mono">Nano Banana Pro</p>
-            </div>
+    <div className="px-6 py-8 lg:px-10 lg:py-10 max-w-7xl mx-auto w-full">
+      {/* Hero / Welcome */}
+      <div className="mb-8 flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono text-subtle mb-2">
+            <Sparkles size={12} className="text-brand" /> AI BANNER PRO
           </div>
-          {/* Active backend badge in header */}
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-medium ${
-            activeBackend === 'coachio'
-              ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
-              : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-          }`}>
-            <Zap size={14} />
-            Active: {activeBackend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-fg mb-1">
+            Chào bạn quay lại.
+          </h1>
+          <p className="text-sm text-muted">
+            Active backend:{' '}
+            <span className={`font-semibold ${activeBackend === 'coachio' ? 'text-brand' : 'text-accent-blue'}`}>
+              {activeBackend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
+            </span>
+            {' · '}
+            <button
+              onClick={() => setShowChangelog(true)}
+              className="hover:text-fg underline-offset-4 hover:underline"
+            >
+              v{APP_VERSION} · {APP_VERSION_NAME}
+            </button>
+          </p>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-7xl w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-
-          {/* Banner Tool Card */}
-          <button
-            onClick={() => onNavigate('banner')}
-            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-indigo-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10"
-          >
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-xl w-fit mb-6">
-              <Wand2 size={32} className="text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              Banner Tool
-              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </h2>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Upload images, configure settings, and generate professional advertising banners with AI.
-            </p>
-            <div className="mt-4 flex items-center gap-2 flex-wrap">
-              <span className={`text-xs px-3 py-1 rounded-full border ${
-                activeBackend === 'coachio'
-                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                  : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-              }`}>
-                {activeBackend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
-              </span>
-              <span className="text-xs bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full border border-purple-500/20">
-                Multi-upload
-              </span>
-            </div>
-          </button>
-
-          {/* UGC Studio Card */}
-          <button
-            onClick={() => onNavigate('ugc-studio')}
-            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-cyan-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/10"
-          >
-            <div className="bg-gradient-to-br from-cyan-600 to-sky-600 p-4 rounded-xl w-fit mb-6">
-              <UserSquare2 size={32} className="text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              UGC Studio
-              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </h2>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Tạo content với khuôn mặt nhất quán: upload face + fashion/style + product.
-            </p>
-            <div className="mt-4">
-              <span className="text-xs bg-cyan-500/10 text-cyan-300 px-3 py-1 rounded-full border border-cyan-500/20">
-                Face-consistent
-              </span>
-            </div>
-          </button>
-
-          {/* Brand Style Card */}
-          <button
-            onClick={() => onNavigate('brand-style')}
-            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-pink-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-pink-500/10"
-          >
-            <div className="bg-gradient-to-br from-pink-600 to-rose-600 p-4 rounded-xl w-fit mb-6">
-              <Palette size={32} className="text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              Brand Style
-              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </h2>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Tạo sẵn brand kit (logo, ảnh tham chiếu, JSON, brand info) để dùng nhanh khi tạo banner.
-            </p>
-            <div className="mt-4">
-              <span className="text-xs bg-pink-500/10 text-pink-400 px-3 py-1 rounded-full border border-pink-500/20">
-                {brandCount} brand{brandCount !== 1 ? 's' : ''} saved
-              </span>
-            </div>
-          </button>
-
-          {/* History Card */}
-          <button
-            onClick={() => onNavigate('history')}
-            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-emerald-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/10"
-          >
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-4 rounded-xl w-fit mb-6">
-              <Clock size={32} className="text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              History
-              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </h2>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              View and manage all your previously generated banners saved locally.
-            </p>
-            <div className="mt-4">
-              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">
-                {historyCount} banner{historyCount !== 1 ? 's' : ''} saved
-              </span>
-            </div>
-          </button>
-
-          {/* API Key Settings Card */}
-          <button
-            onClick={() => setShowApiKeySettings(true)}
-            className="group bg-gray-900 border border-gray-800 rounded-2xl p-8 text-left hover:border-orange-500/50 hover:bg-gray-900/80 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/10"
-          >
-            <div className="bg-gradient-to-br from-orange-600 to-amber-600 p-4 rounded-xl w-fit mb-6">
-              <Key size={32} className="text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              API Settings
-              <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </h2>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Configure API keys for Google Gemini and Coachio AI backends.
-            </p>
-            <div className="mt-4 flex items-center gap-2 flex-wrap">
-              <span className={`text-xs px-3 py-1 rounded-full border flex items-center gap-1.5 ${
-                hasGoogleKey
-                  ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                  : 'bg-gray-800 text-gray-500 border-gray-700'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${hasGoogleKey ? 'bg-green-400' : 'bg-gray-600'}`}></span>
-                Google
-              </span>
-              <span className={`text-xs px-3 py-1 rounded-full border flex items-center gap-1.5 ${
-                hasCoachioKey
-                  ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                  : 'bg-gray-800 text-gray-500 border-gray-700'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${hasCoachioKey ? 'bg-green-400' : 'bg-gray-600'}`}></span>
-                Coachio
-              </span>
-            </div>
-          </button>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-600 flex flex-col items-center gap-1">
-        <div>AI Banner Pro &mdash; Powered by Gemini & Coachio AI</div>
         <button
-          onClick={() => setShowChangelog(true)}
-          className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-indigo-300 transition-colors"
-          title="Xem changelog"
+          onClick={() => onNavigate('banner')}
+          className="bg-brand hover:bg-brand-dark text-white font-medium px-5 py-2.5 rounded-md flex items-center gap-2 transition-colors shadow-pop"
         >
-          <Tag size={11} /> v{APP_VERSION} &middot; {APP_VERSION_NAME}
-          <span className="text-gray-700">({APP_RELEASE_DATE})</span>
+          <Wand2 size={16} /> Tạo banner mới
         </button>
-      </footer>
+      </div>
 
-      {/* API Key Settings Modal */}
-      {showApiKeySettings && (
-        <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+        <StatCard label="Banners trong history" value={historyCount} icon={<Clock size={14} />} accent="text-emerald-500" />
+        <StatCard label="Brand projects" value={brandCount} icon={<Palette size={14} />} accent="text-pink-500" />
+        <StatCard
+          label="Gemini API key"
+          value={hasGoogleKey ? 'Configured' : 'Missing'}
+          icon={<Box size={14} />}
+          accent={hasGoogleKey ? 'text-emerald-500' : 'text-subtle'}
+          numeric={false}
+        />
+        <StatCard
+          label="Coachio API key"
+          value={hasCoachioKey ? 'Configured' : 'Missing'}
+          icon={<Box size={14} />}
+          accent={hasCoachioKey ? 'text-emerald-500' : 'text-subtle'}
+          numeric={false}
+        />
+      </div>
+
+      {/* Tools grid */}
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-subtle mb-3">Công cụ</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {TOOLS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => onNavigate(t.id)}
+            className="group text-left bg-surface border border-line hover:border-line-strong rounded-lg p-5 transition-all hover:shadow-pop"
+          >
+            <div className={`${t.bgAccent} text-white w-10 h-10 rounded-md flex items-center justify-center mb-4`}>
+              {t.icon}
+            </div>
+            <h2 className="text-sm font-bold text-fg mb-1 flex items-center gap-1">
+              {t.title}
+              <ArrowRight size={14} className={`opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all ${t.accent}`} />
+            </h2>
+            <p className="text-xs text-muted leading-relaxed">{t.description}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Recent banners */}
+      {recent.length > 0 && (
+        <>
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-subtle flex items-center gap-2">
+              <ImageIcon size={12} /> Banner gần đây
+            </h3>
+            <button
+              onClick={() => onNavigate('history')}
+              className="text-xs text-muted hover:text-fg flex items-center gap-1"
+            >
+              Xem tất cả <ArrowRight size={12} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            {recent.map(item => (
+              <button
+                key={item.id}
+                onClick={() => onNavigate('history')}
+                className="aspect-square bg-surface border border-line hover:border-line-strong rounded-md overflow-hidden transition-colors group"
+              >
+                <img src={proxiedBannerUrl(item.imageUrl)} alt="Recent" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Changelog Modal */}
       {showChangelog && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowChangelog(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <header className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowChangelog(false)}>
+          <div className="bg-surface border border-line rounded-lg max-w-xl w-full max-h-[85vh] overflow-hidden flex flex-col shadow-pop-lg" onClick={(e) => e.stopPropagation()}>
+            <header className="flex items-center justify-between px-5 py-4 border-b border-line">
               <div className="flex items-center gap-3">
-                <div className="bg-indigo-600/20 text-indigo-300 p-2 rounded-md border border-indigo-500/30">
+                <div className="bg-brand/10 text-brand p-2 rounded-md border border-brand/20">
                   <Tag size={16} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-white">Changelog</h3>
-                  <p className="text-[11px] text-gray-500">v{APP_VERSION} hiện tại &middot; {APP_VERSION_NAME}</p>
+                  <h3 className="text-sm font-bold text-fg">Changelog</h3>
+                  <p className="text-[11px] text-muted">v{APP_VERSION} · {APP_VERSION_NAME} · {APP_RELEASE_DATE}</p>
                 </div>
               </div>
-              <button onClick={() => setShowChangelog(false)} className="p-2 rounded-md hover:bg-gray-800 text-gray-400 hover:text-white">
+              <button onClick={() => setShowChangelog(false)} className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg">
                 <X size={16} />
               </button>
             </header>
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
               {APP_CHANGELOG.map((rel) => (
-                <div key={rel.version} className="border-l-2 border-indigo-500/40 pl-4">
+                <div key={rel.version} className="border-l-2 border-brand/50 pl-4">
                   <div className="flex items-baseline gap-2">
-                    <h4 className="text-sm font-bold text-white">v{rel.version}</h4>
-                    <span className="text-[11px] text-gray-500">&middot; {rel.date}</span>
+                    <h4 className="text-sm font-bold text-fg">v{rel.version}</h4>
+                    <span className="text-[11px] text-subtle">· {rel.date}</span>
                   </div>
                   <ul className="mt-1 space-y-1">
                     {rel.highlights.map((h, i) => (
-                      <li key={i} className="text-[12px] text-gray-300 leading-snug">&bull; {h}</li>
+                      <li key={i} className="text-[12px] text-muted leading-snug">• {h}</li>
                     ))}
                   </ul>
                 </div>
@@ -239,3 +208,16 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
     </div>
   );
 };
+
+const StatCard: React.FC<{
+  label: string; value: string | number; icon: React.ReactNode; accent: string; numeric?: boolean;
+}> = ({ label, value, icon, accent, numeric = true }) => (
+  <div className="bg-surface border border-line rounded-lg p-4">
+    <div className={`flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider mb-2 ${accent}`}>
+      {icon} {label}
+    </div>
+    <div className={`text-2xl font-bold text-fg ${numeric ? 'font-mono' : 'text-base'}`}>
+      {value}
+    </div>
+  </div>
+);
