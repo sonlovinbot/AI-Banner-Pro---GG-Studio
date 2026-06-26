@@ -386,8 +386,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         aspectRatio,
       });
       persistedImageUrl = saved.imageUrl; // Bunny CDN URL if Gemini base64 was uploaded
-    } catch (e) {
-      console.warn('addHistoryToCloud failed (banner still shown to user)', e);
+    } catch (e: any) {
+      console.warn('addHistoryToCloud failed (banner shown to user but NOT saved to cloud)', e);
+      setErrorMsg(`Lưu lên cloud thất bại: ${e?.message || 'unknown'}. Banner đang chỉ hiện local, sẽ mất khi reload.`);
     }
 
     return { imageUrl: persistedImageUrl, duration };

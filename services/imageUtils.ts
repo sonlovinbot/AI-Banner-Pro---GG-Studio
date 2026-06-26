@@ -85,6 +85,51 @@ export async function readImagesFromClipboard(): Promise<File[]> {
   }
 }
 
+// Compress an image (data URL or File) for upload to Bunny via Vercel Edge
+// function. Vercel limits request body to 4.5MB Hobby / 10MB Pro, so we
+// down-scale to maxDimension and re-encode as JPEG. Returns a Blob safe to
+// PUT in a multipart request.
+export async function compressForUpload(
+  source: string | File | Blob,
+  maxDimension = 1920,
+  quality = 0.88,
+): Promise<{ blob: Blob; mimeType: string; dataUrl: string; width: number; height: number }> {
+  let dataUrl: string;
+  if (typeof source === 'string') {
+    dataUrl = source;
+  } else {
+    dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result as string);
+      r.onerror = rej;
+      r.readAsDataURL(source);
+    });
+  }
+
+  const img = await loadImage(dataUrl);
+  const naturalW = img.naturalWidth || img.width;
+  const naturalH = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxDimension / Math.max(naturalW, naturalH));
+  const w = Math.max(1, Math.round(naturalW * scale));
+  const h = Math.max(1, Math.round(naturalH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D unavailable');
+  // White background so JPEG doesn't get black transparent areas
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const outDataUrl = canvas.toDataURL('image/jpeg', quality);
+  const blob = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/jpeg', quality),
+  );
+  return { blob, mimeType: 'image/jpeg', dataUrl: outDataUrl, width: w, height: h };
+}
+
 export async function fileToUploadedImage(file: File): Promise<UploadedImage> {
   const base64 = await readFileAsDataURL(file);
   return {
