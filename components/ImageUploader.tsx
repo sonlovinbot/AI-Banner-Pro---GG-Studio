@@ -94,7 +94,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           >
             <FolderOpen size={14} /> Thư viện
             {library!.length > 0 && (
-              <span className="ml-0.5 bg-indigo-500/30 text-indigo-200 rounded-full px-1.5 py-px text-[10px] font-mono">
+              <span className="ml-0.5 bg-brand text-white rounded-full px-1.5 py-px text-[10px] font-mono font-semibold min-w-[18px] text-center">
                 {library!.length}
               </span>
             )}

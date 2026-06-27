@@ -1,9 +1,24 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.9.0';
-export const APP_VERSION_NAME = 'Ads Manager — Sprint 1';
+export const APP_VERSION = '0.10.0';
+export const APP_VERSION_NAME = 'Ads Manager — Sprints 2-5';
 export const APP_RELEASE_DATE = '2026-06-27';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.10.0',
+    date: '2026-06-27',
+    highlights: [
+      'Sprint 2 — Studio Chat: AI brainstorm với Coachio LLM, multi-model picker per session, brand import, banner picker, quick prompts',
+      'Sprint 3 — Campaign Manager: hierarchy Campaign → AdSet → Creative với 5 modal editor, ODAX objectives, optimization-goal map theo destination',
+      'Sprint 3 — Campaign Wizard: AI sinh full campaign + 2-3 adsets + 3-6 creatives từ brief sản phẩm',
+      'Sprint 4 — Queue Kanban: 6 columns Draft/Ready/Pushing/Pushed/Paused/Failed + drag-drop status change',
+      'Sprint 5 — Meta push payload (Phase B): validator + payload preview + agent prompt MCP-ready',
+      'Sprint 5 — Edge function /api/meta-push (Phase C+A): direct Meta Marketing API push (image upload → campaign → adset → creative → ad), dry-run mode',
+      'Settings → Meta Accounts: cấu hình Ad Account + Page + IG global, mọi campaign tham chiếu',
+      'Profile + API Keys unified modal, avatar upload với fallback base64',
+      'UI polish: thumbnails Campaign/Creative, Vietnamese IME fix, markdown render, long FB body 2200 chars, color discipline',
+    ],
+  },
   {
     version: '0.9.0',
     date: '2026-06-27',

@@ -25,3 +25,4 @@ banner-history-*.json
 *.njsproj
 *.sln
 *.sw?
+.gstack/

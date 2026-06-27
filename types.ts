@@ -78,28 +78,199 @@ export interface VotedBanner {
   votedAt: number;
 }
 
+// ===== Ads Studio Chat =====
+
+export type AdChatRole = 'system' | 'user' | 'assistant';
+
+export type AdChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export interface AdChatMessage {
+  id: string;
+  sessionId: string;
+  role: AdChatRole;
+  content: AdChatContentPart[];
+  /** banner_history ids attached to this message (for traceability) */
+  attachedBannerIds?: string[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  createdAt: number;
+}
+
+export interface AdChatSession {
+  id: string;
+  title?: string;
+  /** if null, uses the global default from localStorage */
+  systemPrompt?: string;
+  attachedBannerIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Parsed <<COPY_SUGGEST>>{...}<<END>> block from assistant message. */
+export interface AdCopySuggestion {
+  primary_text?: string;
+  headline?: string;
+  description?: string;
+  cta?: AdCTA;
+  destination_url?: string;
+  audience?: string;
+  tags?: string[];
+}
+
+// ===== Meta Accounts (cấu hình 1 lần, dùng nhiều campaign) =====
+
+export interface MetaAccount {
+  id: string;
+  /** Tên thân thiện để pick — VD: "Brand A — Page chính" */
+  label: string;
+  /** act_XXXXXXXXX */
+  accountId: string;
+  /** Facebook Page ID — required for ad creative */
+  pageId: string;
+  /** Instagram actor numeric ID — optional */
+  instagramActorId?: string;
+  isDefault?: boolean;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ===== Ads Manager =====
 
+// ODAX (outcome-based) objectives — the only values Meta accepts on new campaigns.
+// Legacy values (TRAFFIC, CONVERSIONS, REACH, BRAND_AWARENESS, ...) return HTTP 400.
+// Source: Pipeboard MCP create_campaign schema.
 export type AdCampaignObjective =
-  | 'TRAFFIC'
-  | 'CONVERSIONS'
-  | 'REACH'
-  | 'ENGAGEMENT'
-  | 'MESSAGES'
-  | 'LEAD_GENERATION'
-  | 'APP_INSTALLS'
-  | 'BRAND_AWARENESS';
+  | 'OUTCOME_AWARENESS'
+  | 'OUTCOME_TRAFFIC'
+  | 'OUTCOME_ENGAGEMENT'
+  | 'OUTCOME_LEADS'
+  | 'OUTCOME_SALES'
+  | 'OUTCOME_APP_PROMOTION';
 
 export type AdCampaignStatus = 'draft' | 'active' | 'paused' | 'archived';
+
+export type MetaBidStrategy =
+  | 'LOWEST_COST_WITHOUT_CAP'
+  | 'LOWEST_COST_WITH_BID_CAP'
+  | 'COST_CAP'
+  | 'LOWEST_COST_WITH_MIN_ROAS';
+
+export type MetaSpecialAdCategory =
+  | 'EMPLOYMENT'
+  | 'HOUSING'
+  | 'CREDIT'
+  | 'ISSUES_ELECTIONS_POLITICS'
+  | 'ONLINE_GAMBLING_AND_GAMING'
+  | 'FINANCIAL_PRODUCTS_SERVICES';
 
 export interface AdCampaign {
   id: string;
   name: string;
   objective?: AdCampaignObjective;
-  dailyBudget?: number;          // VND
+  /** Daily budget in account currency, MINOR units (e.g. cents/VND đơn vị nhỏ).
+   *  Only one of dailyBudget / lifetimeBudget allowed at the level CBO is on. */
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  /** Lifetime spend cap in account currency minor units. */
+  spendCap?: number;
+  /** Campaign Budget Optimization on (budget at campaign level) vs off (budget per ad set). */
+  useCBO?: boolean;
+  bidStrategy?: MetaBidStrategy;
+  specialAdCategories?: MetaSpecialAdCategory[];
+  /** FK → meta_accounts.id (configured globally in Settings → Meta Accounts).
+   *  Resolves accountId + pageId + instagramActorId at push time. */
+  metaAccountRefId?: string;
+  /** @deprecated kept for backward compat with rows created before Meta Accounts feature. */
+  metaAccountId?: string;
+  /** @deprecated use metaAccountRefId */
+  metaPageId?: string;
+  /** @deprecated use metaAccountRefId */
+  metaInstagramActorId?: string;
   tags: string[];
   status: AdCampaignStatus;
   metaCampaignId?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ───────── Ad Set ─────────
+
+export type MetaOptimizationGoal =
+  // AWARENESS
+  | 'REACH' | 'IMPRESSIONS' | 'AD_RECALL_LIFT' | 'THRUPLAY'
+  | 'TWO_SECOND_CONTINUOUS_VIDEO_VIEWS'
+  // TRAFFIC
+  | 'LANDING_PAGE_VIEWS' | 'LINK_CLICKS'
+  // ENGAGEMENT
+  | 'POST_ENGAGEMENT' | 'PAGE_LIKES' | 'EVENT_RESPONSES'
+  | 'CONVERSATIONS'
+  // LEADS
+  | 'LEAD_GENERATION' | 'QUALITY_LEAD' | 'QUALITY_CALL'
+  // SALES + LEADS shared
+  | 'OFFSITE_CONVERSIONS' | 'VALUE' | 'CONVERSIONS';
+
+export type MetaBillingEvent =
+  | 'IMPRESSIONS'
+  | 'LINK_CLICKS'
+  | 'POST_ENGAGEMENT'
+  | 'THRUPLAY'
+  | 'PAGE_LIKES'
+  | 'NONE';
+
+export type MetaDestinationType =
+  | 'WEBSITE'
+  | 'ON_POST'
+  | 'ON_VIDEO'
+  | 'ON_EVENT'
+  | 'ON_PAGE'
+  | 'MESSENGER'
+  | 'WHATSAPP'
+  | 'INSTAGRAM_DIRECT';
+
+export interface AdSetTargeting {
+  /** Geo: country codes (VN, US, ...) or city/region keys */
+  countries?: string[];
+  cities?: string[];
+  ageMin?: number;          // 13..65
+  ageMax?: number;          // 13..65
+  genders?: ('male' | 'female')[];   // omit = all
+  interestIds?: string[];   // Meta interest IDs (from search_interests)
+  interestLabels?: string[];        // human label cache
+  behaviorIds?: string[];
+  /** Manual override for custom audience ids */
+  customAudienceIds?: string[];
+  excludedCustomAudienceIds?: string[];
+}
+
+export type AdSetStatus = 'draft' | 'active' | 'paused' | 'archived';
+
+export interface AdSet {
+  id: string;
+  campaignId: string;
+  name: string;
+  status: AdSetStatus;
+  optimizationGoal?: MetaOptimizationGoal;
+  billingEvent?: MetaBillingEvent;
+  /** Cents/minor units. Required on adset if campaign useCBO=false. */
+  dailyBudget?: number;
+  lifetimeBudget?: number;
+  /** Manual bid in minor units. Required if bid_strategy != LOWEST_COST_WITHOUT_CAP. */
+  bidAmount?: number;
+  /** ISO 8601. start_time/end_time live on adset, NOT campaign (Meta rule). */
+  startTime?: string;
+  endTime?: string;
+  destinationType?: MetaDestinationType;
+  /** For ON_POST destination — Page ID being engagement-promoted. */
+  promotedPageId?: string;
+  /** For lead-gen — lead form id. */
+  leadGenFormId?: string;
+  targeting?: AdSetTargeting;
+  /** Whether adset uses Dynamic Creative ads. */
+  isDynamicCreative?: boolean;
+  metaAdSetId?: string;
   notes?: string;
   createdAt: number;
   updatedAt: number;
@@ -153,6 +324,8 @@ export interface AdInsightSnapshot {
 export interface AdCreative {
   id: string;
   campaignId?: string;
+  /** Local AdSet ID this creative belongs to (resolves to Meta adset_id at push time). */
+  adsetId?: string;
   name?: string;
   bannerId?: string;
   // Copy

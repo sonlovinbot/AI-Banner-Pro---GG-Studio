@@ -426,11 +426,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
-              {(localFaceCount + localFashionCount + localProdCount) > 0 && (
+              {/* Migrate library button hidden — migration done */}
+              {false && (localFaceCount + localFashionCount + localProdCount) > 0 && (
                 <button
                   onClick={migrateLocalLibraries}
                   className="text-[10px] text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
-                  title="Migrate face/fashion/product library lên cloud"
                 >
                   Migrate library ({localFaceCount + localFashionCount + localProdCount})
                 </button>

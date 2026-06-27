@@ -11,6 +11,7 @@ function rowToCreative(r: any): AdCreative {
   return {
     id: r.id,
     campaignId: r.campaign_id || undefined,
+    adsetId: r.adset_id || undefined,
     name: r.name || undefined,
     bannerId: r.banner_id || undefined,
     primaryText: r.primary_text || undefined,
@@ -43,6 +44,7 @@ function creativeToRow(c: AdCreative, userId: string) {
     id: c.id,
     user_id: userId,
     campaign_id: c.campaignId || null,
+    adset_id: c.adsetId || null,
     name: c.name || null,
     banner_id: c.bannerId || null,
     primary_text: c.primaryText || null,
@@ -73,12 +75,14 @@ function creativeToRow(c: AdCreative, userId: string) {
 export async function listCreativesFromCloud(opts?: {
   status?: AdCreativeStatus;
   campaignId?: string;
+  adsetId?: string;
   tag?: string;
 }): Promise<AdCreative[]> {
   try {
     let q = getSupabase().from('ad_creatives').select('*').order('updated_at', { ascending: false });
     if (opts?.status) q = q.eq('status', opts.status);
     if (opts?.campaignId) q = q.eq('campaign_id', opts.campaignId);
+    if (opts?.adsetId) q = q.eq('adset_id', opts.adsetId);
     if (opts?.tag) q = q.contains('tags', [opts.tag]);
     const { data, error } = await q;
     if (error) throw error;

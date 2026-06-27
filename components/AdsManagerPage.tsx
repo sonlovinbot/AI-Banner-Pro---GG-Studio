@@ -1,34 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Megaphone, Wand2, Layers, Send, BarChart3, Plus, Loader2, Copy, Trash2,
-  Edit3, Tag, Filter, Search, X, ChevronDown,
+  Edit3, Tag, Filter, Search, X, ChevronDown, Image as ImageIcon, Upload,
 } from 'lucide-react';
-import { AppPage, AdCreative, AdCreativeStatus, AdCampaign, HistoryItem } from '../types';
+import { AppPage, AdCreative, AdCreativeStatus, AdCampaign, HistoryItem, AdCopySuggestion } from '../types';
 import {
   listCreativesFromCloud,
   saveCreativeToCloud,
   deleteCreativeFromCloud,
   cloneCreativeInCloud,
 } from '../services/adCreativeService';
+import { StudioChat } from './ads/StudioChat';
+import { BannerPickerModal } from './ads/BannerPickerModal';
+import { QueueTab } from './ads/QueueTab';
+import { CampaignsTab } from './ads/CampaignsTab';
 import {
   listCampaignsFromCloud,
   saveCampaignToCloud,
   newCampaignDraft,
 } from '../services/adCampaignService';
-import { listHistoryFromCloud } from '../services/historyService';
+import { listHistoryFromCloud, addHistoryToCloud } from '../services/historyService';
 import { proxiedBannerUrl } from '../services/cdnProxy';
+import { uploadToBunny } from '../services/bunnyService';
+import { listAdSetsFromCloud, AdSetSetupRequiredError } from '../services/adSetService';
+import { AdSet } from '../types';
 
-type AdsTab = 'studio' | 'library' | 'queue' | 'analytics';
+type AdsTab = 'studio' | 'campaigns' | 'library' | 'queue' | 'analytics';
 
 interface Props {
   onNavigate: (page: AppPage) => void;
 }
 
 const TAB_DEFS: { id: AdsTab; label: string; icon: React.ReactNode; accent: string }[] = [
-  { id: 'studio',    label: 'Studio',    icon: <Wand2 size={14} />,    accent: 'text-brand' },
-  { id: 'library',   label: 'Library',   icon: <Layers size={14} />,   accent: 'text-amber-400' },
-  { id: 'queue',     label: 'Queue',     icon: <Send size={14} />,     accent: 'text-cyan-400' },
-  { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={14} />, accent: 'text-emerald-400' },
+  { id: 'studio',    label: 'Studio',    icon: <Wand2 size={14} />,     accent: 'text-brand' },
+  { id: 'campaigns', label: 'Campaigns', icon: <Layers size={14} />,    accent: 'text-fg' },
+  { id: 'library',   label: 'Library',   icon: <Layers size={14} />,    accent: 'text-fg' },
+  { id: 'queue',     label: 'Queue',     icon: <Send size={14} />,      accent: 'text-fg' },
+  { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={14} />, accent: 'text-fg' },
 ];
 
 const STATUS_PALETTE: Record<AdCreativeStatus, string> = {
@@ -113,6 +121,33 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
+  /** Called by StudioChat when user clicks "Apply to Creative" on an AI suggestion.
+   *  Creates a draft creative, switches to Library tab, opens editor for review. */
+  const handleApplySuggestion = async (s: AdCopySuggestion, bannerIds: string[]): Promise<AdCreative> => {
+    const banner = bannerIds[0] ? banners.find(b => b.id === bannerIds[0]) : undefined;
+    const draft: AdCreative = {
+      id: Math.random().toString(36).substring(2, 8) + Date.now().toString(36),
+      bannerId: banner?.id,
+      name: (s.headline || s.primary_text || 'Creative từ chat').slice(0, 80),
+      primaryText: s.primary_text,
+      headline: s.headline,
+      description: s.description,
+      cta: s.cta || 'SHOP_NOW',
+      destinationUrl: s.destination_url,
+      audienceRef: s.audience ? { name: s.audience } : undefined,
+      status: 'draft',
+      tags: s.tags || [],
+      source: 'agent',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const saved = await saveCreativeToCloud(draft);
+    await refresh();
+    setTab('library');
+    setEditing(saved);
+    return saved;
+  };
+
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-canvas text-fg">
       {/* Tabs */}
@@ -140,7 +175,7 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
       </div>
 
       {/* Tab content */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className={`max-w-7xl mx-auto ${tab === 'studio' ? 'px-4 py-2' : 'px-6 py-6'}`}>
         {tab === 'library' && (
           <LibraryTab
             creatives={filtered}
@@ -161,23 +196,32 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
         )}
 
         {tab === 'studio' && (
-          <PlaceholderTab
-            icon={<Wand2 size={48} className="text-brand" />}
-            title="Studio (Sprint 2)"
-            description="Brainstorm: nhập brief sản phẩm + audience + mục tiêu → AI sinh 5 headline + 3 angle + 4 banner concept. Click concept → pre-fill Banner Tool."
+          <StudioChat
+            banners={banners}
+            onApplySuggestion={handleApplySuggestion}
+            onRefreshBanners={refresh}
+          />
+        )}
+
+        {tab === 'campaigns' && (
+          <CampaignsTab
+            campaigns={campaigns}
+            creatives={creatives}
+            banners={banners}
+            loading={loading}
+            onRefresh={refresh}
+            onEditCreative={setEditing}
           />
         )}
 
         {tab === 'queue' && (
-          <PlaceholderTab
-            icon={<Send size={48} className="text-cyan-400" />}
-            title="Queue (Sprint 4)"
-            description="Ready / Pushing / Pushed / Failed. Agent dùng MCP push lên Meta qua Pipeboard."
-            stats={[
-              { label: 'Ready', value: creatives.filter(c => c.status === 'ready').length, color: 'text-emerald-300' },
-              { label: 'Pushed', value: creatives.filter(c => c.status === 'pushed').length, color: 'text-sky-300' },
-              { label: 'Failed', value: creatives.filter(c => c.status === 'failed').length, color: 'text-red-300' },
-            ]}
+          <QueueTab
+            creatives={creatives}
+            campaigns={campaigns}
+            banners={banners}
+            loading={loading}
+            onEdit={setEditing}
+            onRefresh={refresh}
           />
         )}
 
@@ -197,6 +241,7 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
           banners={banners}
           onClose={() => setEditing(null)}
           onSave={handleSaveEdit}
+          onRefreshBanners={refresh}
           onNewCampaign={async (name) => {
             const c = newCampaignDraft(name);
             await saveCampaignToCloud(c);
@@ -438,6 +483,7 @@ interface EditorProps {
   banners: HistoryItem[];
   onClose: () => void;
   onSave: (c: AdCreative) => void;
+  onRefreshBanners: () => Promise<void>;
   onNewCampaign: (name: string) => Promise<AdCampaign>;
 }
 
@@ -447,13 +493,50 @@ const CTA_OPTIONS = [
   'GET_OFFER', 'INSTALL_MOBILE_APP', 'NO_BUTTON',
 ];
 
-const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, onClose, onSave, onNewCampaign }) => {
+const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, onClose, onSave, onRefreshBanners, onNewCampaign }) => {
   const [draft, setDraft] = useState<AdCreative>(creative);
   const [newCampaignName, setNewCampaignName] = useState('');
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [adSets, setAdSets] = useState<AdSet[]>([]);
+  useEffect(() => {
+    listAdSetsFromCloud()
+      .then(setAdSets)
+      .catch(e => { if (!(e instanceof AdSetSetupRequiredError)) console.warn(e); });
+  }, []);
+  const adSetsForCampaign = draft.campaignId
+    ? adSets.filter(a => a.campaignId === draft.campaignId)
+    : [];
+  const [showBannerPicker, setShowBannerPicker] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
 
   const banner = banners.find(b => b.id === draft.bannerId);
+
+  const handleUploadBanner = async (file: File) => {
+    setBannerUploadError(null);
+    setUploadingBanner(true);
+    try {
+      const up = await uploadToBunny(file, 'banners');
+      const newItem: HistoryItem = {
+        id: Math.random().toString(36).substring(2, 8) + Date.now().toString(36),
+        imageUrl: up.url,
+        promptUsed: `Uploaded from Ad Creative — ${file.name}`,
+        timestamp: Date.now(),
+        model: 'upload',
+        quality: '1K',
+        aspectRatio: '1:1',
+      };
+      const saved = await addHistoryToCloud(newItem);
+      await onRefreshBanners();
+      setDraft(prev => ({ ...prev, bannerId: saved.id }));
+    } catch (e: any) {
+      setBannerUploadError(e?.message || 'Upload lỗi');
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
 
   const update = <K extends keyof AdCreative>(key: K, value: AdCreative[K]) =>
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -484,16 +567,86 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
         </header>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* Banner preview */}
-          {banner && (
-            <div className="flex gap-3 p-3 bg-surface rounded-lg border border-line">
-              <img src={proxiedBannerUrl(banner.imageUrl)} alt="" className="w-20 h-20 object-cover rounded border border-line" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-subtle">Banner</p>
-                <p className="text-xs text-fg truncate">{banner.aspectRatio} · {banner.quality}</p>
-                <p className="text-[11px] text-muted truncate">{banner.promptUsed?.slice(0, 80)}</p>
-              </div>
+          {/* Banner picker / preview */}
+          <div className="bg-surface rounded-lg border border-line p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] uppercase tracking-wider text-subtle font-mono">Banner</p>
+              {banner && (
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setShowBannerPicker(true)}
+                    className="text-[10px] bg-raised hover:bg-raised-2 text-fg px-2 py-1 rounded flex items-center gap-1"
+                  >
+                    <ImageIcon size={10} /> Đổi
+                  </button>
+                  <button
+                    onClick={() => setDraft(prev => ({ ...prev, bannerId: undefined }))}
+                    className="text-[10px] bg-raised hover:bg-red-500/10 text-muted hover:text-red-400 px-2 py-1 rounded flex items-center gap-1"
+                  >
+                    <X size={10} /> Bỏ
+                  </button>
+                </div>
+              )}
             </div>
+
+            {banner ? (
+              <div className="flex gap-3">
+                <img src={proxiedBannerUrl(banner.imageUrl)} alt="" className="w-24 h-24 object-cover rounded border border-line" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-fg truncate font-medium">{banner.aspectRatio} · {banner.quality} · {banner.model}</p>
+                  <p className="text-[11px] text-muted line-clamp-2 mt-0.5">{banner.promptUsed?.slice(0, 160)}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-4 text-center">
+                <div className="w-12 h-12 bg-raised border border-dashed border-line-strong rounded-md flex items-center justify-center text-muted">
+                  <ImageIcon size={20} />
+                </div>
+                <p className="text-[11px] text-subtle">Chưa có banner — chọn từ History hoặc upload ảnh mới</p>
+                <div className="flex gap-1.5 mt-1">
+                  <button
+                    onClick={() => setShowBannerPicker(true)}
+                    className="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 shadow-pop"
+                  >
+                    <ImageIcon size={12} /> Chọn từ History
+                  </button>
+                  <button
+                    onClick={() => bannerFileInputRef.current?.click()}
+                    disabled={uploadingBanner}
+                    className="text-xs bg-raised hover:bg-raised-2 text-fg px-3 py-1.5 rounded-md flex items-center gap-1.5 border border-line disabled:opacity-50"
+                  >
+                    {uploadingBanner ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                    {uploadingBanner ? 'Đang upload...' : 'Upload ảnh'}
+                  </button>
+                </div>
+                {bannerUploadError && (
+                  <p className="text-[10px] text-red-400 mt-1">{bannerUploadError}</p>
+                )}
+              </div>
+            )}
+
+            <input
+              ref={bannerFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleUploadBanner(f);
+                e.target.value = '';
+              }}
+            />
+          </div>
+
+          {showBannerPicker && (
+            <BannerPickerModal
+              selectedIds={draft.bannerId ? [draft.bannerId] : []}
+              onClose={() => setShowBannerPicker(false)}
+              onConfirm={(list) => {
+                if (list[0]) setDraft(prev => ({ ...prev, bannerId: list[0].id }));
+                setShowBannerPicker(false);
+              }}
+            />
           )}
 
           <Field label="Tên creative">
@@ -506,13 +659,33 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
             />
           </Field>
 
-          <Field label={`Primary text (${(draft.primaryText || '').length}/125)`}>
+          <Field label={(() => {
+            const len = (draft.primaryText || '').length;
+            const foldWarning = len > 125;
+            return (
+              <span className="flex items-center gap-2">
+                <span>Primary text (FB body)</span>
+                <span className={`text-[10px] font-mono ${foldWarning ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {len}/2200
+                </span>
+                <span className="text-[10px] text-subtle">
+                  · Mobile gấp ở 125 — viết hook 100 chars đầu
+                </span>
+              </span>
+            ) as any;
+          })()}>
             <textarea
               value={draft.primaryText || ''}
-              onChange={(e) => update('primaryText', e.target.value.slice(0, 125))}
-              placeholder="Text trên cùng — hiển thị phía trên ảnh banner..."
-              className="w-full bg-canvas border border-line rounded-md p-3 text-sm focus:outline-none focus:border-brand h-20 resize-none"
+              onChange={(e) => update('primaryText', e.target.value.slice(0, 2200))}
+              placeholder="Body chính trên Facebook feed. Hook 100 chars đầu → USP → CTA. Có thể xuống dòng, dùng emoji vừa phải. Mobile cắt ở ~125 chars (bấm 'Xem thêm' mở full)."
+              className="w-full bg-canvas border border-line rounded-md p-3 text-sm focus:outline-none focus:border-brand min-h-[120px] resize-y leading-relaxed"
+              rows={5}
             />
+            {draft.primaryText && draft.primaryText.length > 125 && (
+              <div className="mt-1 text-[10px] text-subtle font-mono">
+                Mobile preview cut: <span className="text-fg">{draft.primaryText.slice(0, 125)}</span>...
+              </div>
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -573,7 +746,14 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
             <div className="flex gap-2">
               <select
                 value={draft.campaignId || ''}
-                onChange={(e) => update('campaignId', e.target.value || undefined)}
+                onChange={(e) => {
+                  const v = e.target.value || undefined;
+                  update('campaignId', v);
+                  // Clear adsetId if it doesn't belong to the new campaign
+                  if (draft.adsetId && !adSets.find(a => a.id === draft.adsetId && a.campaignId === v)) {
+                    update('adsetId', undefined);
+                  }
+                }}
                 className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
               >
                 <option value="">— Chưa gán —</option>
@@ -604,6 +784,23 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
                 {savingCampaign ? <Loader2 size={12} className="animate-spin" /> : 'Add'}
               </button>
             </div>
+          </Field>
+
+          <Field label="Ad Set">
+            <select
+              value={draft.adsetId || ''}
+              onChange={(e) => update('adsetId', e.target.value || undefined)}
+              disabled={!draft.campaignId || adSetsForCampaign.length === 0}
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand disabled:opacity-50"
+            >
+              <option value="">— {draft.campaignId ? (adSetsForCampaign.length === 0 ? 'Campaign này chưa có ad set' : 'Chưa gán') : 'Chọn campaign trước'} —</option>
+              {adSetsForCampaign.map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+            {draft.campaignId && adSetsForCampaign.length === 0 && (
+              <p className="text-[10px] text-subtle mt-1">Tạo ad set ở tab Campaigns để gán creative.</p>
+            )}
           </Field>
 
           <Field label="Status">
@@ -667,7 +864,7 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
   );
 };
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+const Field: React.FC<{ label: React.ReactNode; children: React.ReactNode }> = ({ label, children }) => (
   <div>
     <label className="text-[11px] font-medium text-muted block mb-1">{label}</label>
     {children}

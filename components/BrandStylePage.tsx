@@ -120,20 +120,16 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
               <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
                 <Cloud size={11} /> {loading ? '...' : projects.length} cloud
               </span>
-              {localCount > 0 && (
-                <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                  {localCount} local
-                </span>
-              )}
+              {/* local badge hidden — migration done */}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {localCount > 0 && (
+            {/* Migrate local button hidden */}
+            {false && localCount > 0 && (
               <button
                 onClick={handleMigrateLocal}
                 disabled={migrating}
                 className="text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-3 py-2 rounded-lg flex items-center gap-1.5 border border-amber-500/20 disabled:opacity-50"
-                title={`Migrate ${localCount} brand cũ trong localStorage lên Supabase`}
               >
                 {migrating ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
                 Migrate local ({localCount})

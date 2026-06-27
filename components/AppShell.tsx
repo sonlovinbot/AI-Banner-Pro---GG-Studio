@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Home, Wand2, UserSquare2, Palette, Clock, Key, Menu, X,
-  Sun, Moon, Zap, ChevronLeft, LogOut, User as UserIcon, Megaphone,
+  Sun, Moon, Zap, ChevronLeft, LogOut, User as UserIcon, Megaphone, Edit3,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { AppPage } from '../types';
@@ -9,7 +9,7 @@ import { getActiveBackend } from '../services/storageService';
 import { getTheme, toggleTheme, Theme } from '../services/themeService';
 import { signOut } from '../services/authService';
 import { APP_VERSION } from '../data/appVersion';
-import { ApiKeySettings } from './ApiKeySettings';
+import { ProfileSettingsModal } from './ProfileSettingsModal';
 
 interface AppShellProps {
   currentPage: AppPage;
@@ -46,7 +46,7 @@ const PAGE_TITLE: Record<AppPage, string> = {
 export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, user, children }) => {
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [settingsModal, setSettingsModal] = useState<null | { tab: 'profile' | 'keys' }>(null);
   const backend = getActiveBackend();
 
   useEffect(() => {
@@ -109,13 +109,16 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
           );
         })}
 
-        <button
-          onClick={() => setShowApiSettings(true)}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted hover:text-fg hover:bg-raised border-l-2 border-transparent transition-all"
-        >
-          <Key size={18} className="text-orange-400" />
-          <span>API Settings</span>
-        </button>
+        {/* API Settings sidebar entry hidden — access via profile box → API Keys tab */}
+        {false && (
+          <button
+            onClick={() => setSettingsModal({ tab: 'keys' })}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted hover:text-fg hover:bg-raised border-l-2 border-transparent transition-all"
+          >
+            <Key size={18} className="text-orange-400" />
+            <span>API Settings</span>
+          </button>
+        )}
       </nav>
 
       {/* Footer */}
@@ -139,20 +142,33 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
 
         {user && (
           <div className="border-t border-line pt-2 mt-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md">
-              <div className="w-7 h-7 rounded-full bg-brand/15 text-brand flex items-center justify-center text-xs font-bold">
-                {(user.user_metadata?.display_name || user.email || '?').slice(0, 1).toUpperCase()}
-              </div>
+            <button
+              onClick={() => setSettingsModal({ tab: 'profile' })}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-raised transition-colors text-left"
+              title="Mở Hồ sơ & Cài đặt"
+            >
+              {(user.user_metadata?.avatar_url as string) ? (
+                <img
+                  src={user.user_metadata.avatar_url as string}
+                  alt=""
+                  className="w-7 h-7 rounded-full object-cover border border-line"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-brand/15 text-brand flex items-center justify-center text-xs font-bold">
+                  {(user.user_metadata?.display_name || user.email || '?').slice(0, 1).toUpperCase()}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-[12px] font-medium text-fg truncate">
                   {user.user_metadata?.display_name || user.email?.split('@')[0]}
                 </p>
                 <p className="text-[10px] text-subtle truncate">{user.email}</p>
               </div>
-            </div>
+              <Edit3 size={12} className="text-muted shrink-0" />
+            </button>
             <button
               onClick={async () => { try { await signOut(); } catch (e) { console.warn(e); } }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors mt-1"
               title="Đăng xuất"
             >
               <LogOut size={15} />
@@ -213,7 +229,13 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
         <main className="flex-1 min-w-0">{children}</main>
       </div>
 
-      {showApiSettings && <ApiKeySettings onClose={() => setShowApiSettings(false)} />}
+      {settingsModal && (
+        <ProfileSettingsModal
+          user={user}
+          initialTab={settingsModal.tab}
+          onClose={() => setSettingsModal(null)}
+        />
+      )}
     </div>
   );
 };

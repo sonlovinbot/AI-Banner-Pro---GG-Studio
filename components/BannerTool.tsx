@@ -733,11 +733,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
-              {(localRefCount + localProdCount) > 0 && (
+              {/* Migrate library button hidden — migration done */}
+              {false && (localRefCount + localProdCount) > 0 && (
                 <button
                   onClick={migrateLocalLibraries}
                   className="text-[10px] text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
-                  title="Migrate local ref+prod library lên Bunny + Supabase"
                 >
                   Migrate library ({localRefCount + localProdCount})
                 </button>
@@ -784,11 +784,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   + Tạo Brand Style để sử dụng nhanh
                 </button>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
                   <select
                     value={activeBrandId}
                     onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-pink-500"
+                    className="flex-1 min-w-0 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-pink-500"
                   >
                     <option value="">— Không dùng brand —</option>
                     {brandProjects.map(p => (
@@ -798,7 +798,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   {activeBrandId && (
                     <button
                       onClick={clearBrandSelection}
-                      className="p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg"
+                      className="shrink-0 p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg"
                       title="Bỏ chọn brand"
                     >
                       <X size={14} />
@@ -806,10 +806,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   )}
                   <button
                     onClick={() => onNavigate('brand-style')}
-                    className="text-[11px] px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong"
-                    title="Quản lý brand"
+                    className="shrink-0 p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg border border-line-strong"
+                    title="Quản lý brand projects"
                   >
-                    Quản lý
+                    <Settings2 size={14} />
                   </button>
                 </div>
               )}
@@ -1007,7 +1007,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                   >
                     <FolderOpen size={11} /> Thư viện
                     {brandLibrary.length > 0 && (
-                      <span className="bg-indigo-500/30 text-indigo-200 rounded-full px-1.5 py-px text-[9px] font-mono">
+                      <span className="bg-brand text-white rounded-full px-1.5 py-px text-[9px] font-mono font-semibold min-w-[16px] text-center">
                         {brandLibrary.length}
                       </span>
                     )}

@@ -26,9 +26,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [selectedImage, setSelectedImage] = useState<HistoryItem | null>(null);
   const [editTarget, setEditTarget] = useState<HistoryItem | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string; action?: { label: string; onClick: () => void } } | null>(null);
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
+  const [sendingToAds, setSendingToAds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const embeddedCount = getEmbeddedHistoryCount();
   const localCount = getHistory().length;
@@ -46,9 +47,30 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
+    const t = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const handleSendToAds = async (item: HistoryItem) => {
+    if (sendingToAds.has(item.id)) return;
+    setSendingToAds(prev => new Set(prev).add(item.id));
+    try {
+      await createCreativeFromBanner(item);
+      setToast({
+        kind: 'ok',
+        msg: 'Đã tạo creative draft',
+        action: { label: 'Mở Ads Manager', onClick: () => onNavigate('ads-manager') },
+      });
+    } catch (e: any) {
+      setToast({ kind: 'err', msg: `Send to Ads lỗi: ${e?.message}` });
+    } finally {
+      setSendingToAds(prev => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
 
   const handleExport = () => {
     if (items.length === 0) return;
@@ -154,20 +176,16 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
                 <Cloud size={11} /> {loading ? '...' : items.length} cloud
               </span>
-              {localCount > 0 && (
-                <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                  {localCount} local
-                </span>
-              )}
+              {/* {localCount} local badge hidden after migration done */}
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            {localCount > 0 && (
+            {/* Migrate local button hidden — migration done */}
+            {false && localCount > 0 && (
               <button
                 onClick={handleMigrateLocal}
                 disabled={migrating}
                 className="text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-amber-500/20 disabled:opacity-50"
-                title={`Migrate ${localCount} banner cũ trong localStorage lên Supabase`}
               >
                 {migrating ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
                 Migrate local ({localCount})
@@ -184,11 +202,11 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                 e.target.value = '';
               }}
             />
-            {embeddedCount > 0 && (
+            {/* Restore snapshot button hidden */}
+            {false && embeddedCount > 0 && (
               <button
                 onClick={handleRestoreSnapshot}
                 className="text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20"
-                title={`Import ${embeddedCount} banner từ snapshot embed trong code`}
               >
                 <Database size={14} /> Restore snapshot
                 <span className="text-[10px] bg-emerald-500/20 text-emerald-200 px-1.5 py-0.5 rounded-full">{embeddedCount}</span>
@@ -242,7 +260,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               >
                 <Upload size={16} /> Import JSON
               </button>
-              {embeddedCount > 0 && (
+              {/* Restore snapshot button hidden */}
+              {false && embeddedCount > 0 && (
                 <button
                   onClick={handleRestoreSnapshot}
                   className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 border border-emerald-500/30 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
@@ -267,18 +286,14 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
                     <button
-                      onClick={async () => {
-                        try {
-                          await createCreativeFromBanner(item);
-                          setToast({ kind: 'ok', msg: 'Đã tạo creative draft trong Ads Manager' });
-                        } catch (e: any) {
-                          setToast({ kind: 'err', msg: `Send to Ads lỗi: ${e?.message}` });
-                        }
-                      }}
-                      className="bg-amber-600 hover:bg-amber-500 p-2.5 rounded-full text-white transition-all"
+                      onClick={() => handleSendToAds(item)}
+                      disabled={sendingToAds.has(item.id)}
+                      className="bg-amber-600 hover:bg-amber-500 disabled:bg-amber-700 disabled:cursor-not-allowed p-2.5 rounded-full text-white transition-all"
                       title="Send to Ads Manager (tạo creative draft)"
                     >
-                      <Megaphone size={18} />
+                      {sendingToAds.has(item.id)
+                        ? <Loader2 size={18} className="animate-spin" />
+                        : <Megaphone size={18} />}
                     </button>
                     <button
                       onClick={() => setEditTarget(item)}
@@ -401,15 +416,30 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2">
           <div
-            className={`px-4 py-2.5 rounded-lg shadow-lg text-sm flex items-center gap-2 border ${
+            className={`px-4 py-3 rounded-lg shadow-2xl text-sm flex items-center gap-3 border-2 backdrop-blur-md ${
               toast.kind === 'ok'
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-                : 'bg-red-500/10 border-red-500/30 text-red-200'
+                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-100'
+                : 'bg-red-500/20 border-red-500/50 text-red-100'
             }`}
           >
-            {toast.msg}
+            <span className="text-base">{toast.kind === 'ok' ? '✓' : '✕'}</span>
+            <span className="font-medium">{toast.msg}</span>
+            {toast.action && (
+              <button
+                onClick={() => { toast.action!.onClick(); setToast(null); }}
+                className="ml-2 text-xs bg-white/10 hover:bg-white/20 px-3 py-1 rounded font-semibold transition-colors"
+              >
+                {toast.action.label} →
+              </button>
+            )}
+            <button
+              onClick={() => setToast(null)}
+              className="ml-1 opacity-60 hover:opacity-100"
+            >
+              <X size={14} />
+            </button>
           </div>
         </div>
       )}
