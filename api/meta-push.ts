@@ -1,30 +1,31 @@
 // Vercel Edge function — pushes a local Campaign + its AdSets + Creatives to
-// Meta Marketing API directly. Supports two modes:
+// Meta Ads via Pipeboard MCP. Pipeboard handles the Meta App tier / App
+// Review headache — they provide a Standard Access Marketing App on their
+// side and proxy our requests. We only need a Pipeboard API token.
 //
-//   • Dry-run: env META_SYSTEM_USER_TOKEN unset OR request body { dryRun: true }
-//     → loads from Supabase, validates, returns payload as preview (no Meta calls).
+// Modes:
+//   • Dry-run: PIPEBOARD_API_TOKEN unset OR request body { dryRun: true }
+//     → loads from Supabase, validates, returns payload as preview.
 //
-//   • Real push: env set + dryRun=false → executes the 5-step flow:
-//       1. POST /act_{id}/adimages per unique banner (using Bunny URL, Meta fetches bytes)
-//       2. POST /act_{id}/campaigns → meta_campaign_id
-//       3. POST /act_{id}/adsets → meta_adset_id (per adset)
-//       4. POST /act_{id}/adcreatives → meta_creative_id (per creative)
-//       5. POST /act_{id}/ads → meta_ad_id (per ad)
-//     Then updates ad_campaigns / ad_sets / ad_creatives with returned Meta IDs.
+//   • Real push: token set + dryRun=false → executes 5-step Pipeboard flow:
+//       1. upload_ad_image per banner → image_hash
+//       2. create_campaign → meta_campaign_id
+//       3. create_adset per adset → meta_adset_id
+//       4. create_ad_creative per creative → meta_creative_id
+//       5. create_ad per ad → meta_ad_id
+//     Then updates Supabase with returned Meta IDs.
 //
 // Required env vars (Vercel project settings):
-//   META_SYSTEM_USER_TOKEN  long-lived System User token, perms: ads_management + business_management
-//   META_API_VERSION        optional, defaults to v23.0
+//   PIPEBOARD_API_TOKEN     from https://pipeboard.co/api-tokens (free: 30 calls/week)
 //   SUPABASE_URL            mirror of frontend env, used to verify user JWT
 //   SUPABASE_ANON_KEY       mirror of frontend env
 
 import { AdCampaign, AdSet, AdCreative, HistoryItem, MetaAccount } from '../types';
 import { buildMetaPayload, validateForPush, resolveMetaAccount } from '../services/metaPushPayload';
+import { callPipeboardTool, PipeboardError } from './_lib/pipeboardClient';
 
 export const config = { runtime: 'edge' };
 
-const META_VERSION = process.env.META_API_VERSION || 'v23.0';
-const META_BASE = `https://graph.facebook.com/${META_VERSION}`;
 
 interface PushRequestBody {
   campaignId: string;
@@ -224,45 +225,6 @@ function rowToBanner(r: any): HistoryItem {
   } as HistoryItem;
 }
 
-// ────────────── Meta Graph API helpers ──────────────
-
-async function metaPost<T = any>(path: string, body: any, token: string): Promise<T> {
-  const res = await fetch(`${META_BASE}${path}?access_token=${encodeURIComponent(token)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let data: any;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  if (!res.ok || data.error) {
-    const err = data.error || { message: text };
-    throw new Error(`Meta ${path} ${res.status}: ${err.message || JSON.stringify(err)}`);
-  }
-  return data as T;
-}
-
-async function metaUploadImageByUrl(accountId: string, url: string, token: string): Promise<string> {
-  // Meta accepts JSON form: { url: "<sourceUrl>" } on /adimages.
-  // Returns: { images: { <filename>: { hash, url, ... } } }
-  const res = await fetch(`${META_BASE}/${accountId}/adimages?access_token=${encodeURIComponent(token)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  });
-  const text = await res.text();
-  let data: any;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  if (!res.ok || data.error) {
-    throw new Error(`Meta /adimages ${res.status}: ${data.error?.message || text}`);
-  }
-  const images = data.images || {};
-  const firstKey = Object.keys(images)[0];
-  const hash = firstKey ? images[firstKey].hash : undefined;
-  if (!hash) throw new Error(`Meta /adimages: no hash in response (${text.slice(0, 200)})`);
-  return hash;
-}
-
 // ────────────── Handler ──────────────
 
 async function handlerImpl(req: Request): Promise<Response> {
@@ -331,8 +293,8 @@ async function handlerImpl(req: Request): Promise<Response> {
   const validation = validateForPush(campaign, adSets, creatives, banners, metaAccounts);
   const payload = buildMetaPayload(campaign, adSets, creatives, banners, metaAccounts, { initialStatus: FORCED_INITIAL_STATUS });
 
-  const metaToken = process.env.META_SYSTEM_USER_TOKEN;
-  const dryRun = body.dryRun === true || !metaToken;
+  const pipeboardToken = process.env.PIPEBOARD_API_TOKEN;
+  const dryRun = body.dryRun === true || !pipeboardToken;
 
   if (dryRun || !validation.canPush) {
     const resp: PushResponse = {
@@ -342,8 +304,8 @@ async function handlerImpl(req: Request): Promise<Response> {
       payload,
       errors: validation.errors.map(e => `[${e.scope}.${e.field}] ${e.message}`),
       warnings: validation.warnings.map(w => `[${w.scope}.${w.field}] ${w.message}`),
-      message: !metaToken
-        ? 'Server chưa cấu hình META_SYSTEM_USER_TOKEN — trả về preview payload.'
+      message: !pipeboardToken
+        ? 'Server chưa cấu hình PIPEBOARD_API_TOKEN — trả về preview payload.'
         : !validation.canPush
         ? 'Validation chưa pass — không push.'
         : 'Client yêu cầu dryRun.',
@@ -351,7 +313,7 @@ async function handlerImpl(req: Request): Promise<Response> {
     return json(resp);
   }
 
-  // ────────── Real push ──────────
+  // ────────── Real push via Pipeboard MCP ──────────
   const steps: PushResultPerStep[] = [];
   const resolved = resolveMetaAccount(campaign, metaAccounts);
   const accountId = resolved?.accountId || campaign.metaAccountId || '';
@@ -363,29 +325,55 @@ async function handlerImpl(req: Request): Promise<Response> {
   }
   const imageHashByBanner: Record<string, string> = {};
 
-  // Step 1: images
+  // Pipeboard tool responses don't have a fixed shape across versions. This
+  // helper pulls the "id" field from common variants so each step can record
+  // a Meta-side id without us hard-coding one path.
+  const extractId = (out: any): string | undefined => {
+    if (!out) return undefined;
+    return out.id || out.campaign_id || out.adset_id || out.ad_id || out.creative_id || out.data?.id;
+  };
+  const extractImageHash = (out: any, fileName: string): string | undefined => {
+    if (!out) return undefined;
+    return out.hash || out.image_hash
+      || out.images?.[fileName]?.hash
+      || (out.images && Object.values(out.images)[0] && (Object.values(out.images)[0] as any).hash);
+  };
+
+  // Step 1: Upload images via Pipeboard
   for (const u of payload.uploads) {
     try {
-      const hash = await metaUploadImageByUrl(accountId, u.sourceUrl, metaToken);
+      const out = await callPipeboardTool('upload_ad_image', {
+        account_id: accountId,
+        image_url: u.sourceUrl,
+        name: u.fileName,
+      }, pipeboardToken);
+      const hash = extractImageHash(out, u.fileName);
+      if (!hash) throw new Error(`No image_hash in response: ${JSON.stringify(out).slice(0, 200)}`);
       imageHashByBanner[u.localBannerId] = hash;
       steps.push({ step: 'upload', status: 'ok', localId: u.localBannerId, imageHash: hash });
     } catch (e: any) {
-      steps.push({ step: 'upload', status: 'failed', localId: u.localBannerId, error: e?.message });
+      const msg = e instanceof PipeboardError ? e.message : (e?.message || 'upload lỗi');
+      steps.push({ step: 'upload', status: 'failed', localId: u.localBannerId, error: msg });
       return json({
         mode: 'push' as const,
         success: false,
         campaignId: campaign.id,
         steps,
-        errors: [e?.message || 'image upload lỗi'],
+        errors: [msg],
       } as PushResponse, 500);
     }
   }
 
-  // Step 2: campaign
+  // Step 2: Create campaign via Pipeboard
   let metaCampaignId: string;
   try {
-    const res = await metaPost<{ id: string }>(`/${accountId}/campaigns`, payload.campaign.body, metaToken);
-    metaCampaignId = res.id;
+    const out = await callPipeboardTool('create_campaign', {
+      account_id: accountId,
+      ...payload.campaign.body,
+    }, pipeboardToken);
+    const id = extractId(out);
+    if (!id) throw new Error(`No campaign id in response: ${JSON.stringify(out).slice(0, 200)}`);
+    metaCampaignId = id;
     steps.push({ step: 'campaign', status: 'ok', localId: campaign.id, metaId: metaCampaignId });
     await supaPatch(token, 'ad_campaigns', campaign.id, {
       meta_campaign_id: metaCampaignId,
@@ -393,34 +381,42 @@ async function handlerImpl(req: Request): Promise<Response> {
       updated_at: new Date().toISOString(),
     });
   } catch (e: any) {
-    steps.push({ step: 'campaign', status: 'failed', error: e?.message });
+    const msg = e instanceof PipeboardError ? e.message : (e?.message || 'campaign create lỗi');
+    steps.push({ step: 'campaign', status: 'failed', error: msg });
     return json({
       mode: 'push' as const,
       success: false,
       campaignId: campaign.id,
       steps,
-      errors: [e?.message || 'campaign create lỗi'],
+      errors: [msg],
     } as PushResponse, 500);
   }
 
-  // Step 3: adsets
+  // Step 3: Create adsets via Pipeboard
   const metaAdsetByLocal: Record<string, string> = {};
   for (const a of payload.adSets) {
     try {
-      const res = await metaPost<{ id: string }>(`/${accountId}/adsets`, { ...a.body, campaign_id: metaCampaignId }, metaToken);
-      metaAdsetByLocal[a.localId] = res.id;
-      steps.push({ step: 'adset', status: 'ok', localId: a.localId, metaId: res.id });
+      const out = await callPipeboardTool('create_adset', {
+        account_id: accountId,
+        ...a.body,
+        campaign_id: metaCampaignId,
+      }, pipeboardToken);
+      const id = extractId(out);
+      if (!id) throw new Error(`No adset id in response: ${JSON.stringify(out).slice(0, 200)}`);
+      metaAdsetByLocal[a.localId] = id;
+      steps.push({ step: 'adset', status: 'ok', localId: a.localId, metaId: id });
       await supaPatch(token, 'ad_sets', a.localId, {
-        meta_ad_set_id: res.id,
+        meta_ad_set_id: id,
         status: 'active',
         updated_at: new Date().toISOString(),
       });
     } catch (e: any) {
-      steps.push({ step: 'adset', status: 'failed', localId: a.localId, error: e?.message });
+      const msg = e instanceof PipeboardError ? e.message : (e?.message || 'adset create lỗi');
+      steps.push({ step: 'adset', status: 'failed', localId: a.localId, error: msg });
     }
   }
 
-  // Step 4: creatives
+  // Step 4: Create creatives via Pipeboard
   const metaCreativeByLocal: Record<string, string> = {};
   for (const c of payload.creatives) {
     try {
@@ -430,46 +426,55 @@ async function handlerImpl(req: Request): Promise<Response> {
       if (bodyWithHash.object_story_spec?.link_data) {
         bodyWithHash.object_story_spec.link_data.image_hash = hash;
       }
-      const res = await metaPost<{ id: string }>(`/${accountId}/adcreatives`, bodyWithHash, metaToken);
-      metaCreativeByLocal[c.localId] = res.id;
-      steps.push({ step: 'creative', status: 'ok', localId: c.localId, metaId: res.id });
+      const out = await callPipeboardTool('create_ad_creative', {
+        account_id: accountId,
+        ...bodyWithHash,
+      }, pipeboardToken);
+      const id = extractId(out);
+      if (!id) throw new Error(`No creative id in response: ${JSON.stringify(out).slice(0, 200)}`);
+      metaCreativeByLocal[c.localId] = id;
+      steps.push({ step: 'creative', status: 'ok', localId: c.localId, metaId: id });
       await supaPatch(token, 'ad_creatives', c.localId, {
-        meta_creative_id: res.id,
+        meta_creative_id: id,
         updated_at: new Date().toISOString(),
       });
     } catch (e: any) {
-      steps.push({ step: 'creative', status: 'failed', localId: c.localId, error: e?.message });
+      const msg = e instanceof PipeboardError ? e.message : (e?.message || 'creative create lỗi');
+      steps.push({ step: 'creative', status: 'failed', localId: c.localId, error: msg });
     }
   }
 
-  // Step 5: ads
+  // Step 5: Create ads via Pipeboard
   for (const ad of payload.ads) {
     try {
       const metaAdsetId = metaAdsetByLocal[ad.localAdsetId];
       const metaCreativeId = metaCreativeByLocal[ad.localCreativeId];
       if (!metaAdsetId) throw new Error(`No meta adset for local ${ad.localAdsetId}`);
       if (!metaCreativeId) throw new Error(`No meta creative for local ${ad.localCreativeId}`);
-      const res = await metaPost<{ id: string }>(`/${accountId}/ads`, {
-        ...ad.body,
+      const out = await callPipeboardTool('create_ad', {
+        account_id: accountId,
+        name: ad.body.name,
         adset_id: metaAdsetId,
-        creative: { creative_id: metaCreativeId },
-      }, metaToken);
-      steps.push({ step: 'ad', status: 'ok', localId: ad.localId, metaId: res.id });
-      // Update creative with ad id + status=pushed + pushed_at
+        creative_id: metaCreativeId,
+        status: ad.body.status,
+      }, pipeboardToken);
+      const id = extractId(out);
+      if (!id) throw new Error(`No ad id in response: ${JSON.stringify(out).slice(0, 200)}`);
+      steps.push({ step: 'ad', status: 'ok', localId: ad.localId, metaId: id });
       await supaPatch(token, 'ad_creatives', ad.localCreativeId, {
-        meta_ad_id: res.id,
-        meta_adset_id: metaAdsetByLocal[ad.localAdsetId],
+        meta_ad_id: id,
+        meta_adset_id: metaAdsetId,
         status: 'pushed',
         pushed_at: new Date().toISOString(),
         push_error: null,
         updated_at: new Date().toISOString(),
       });
     } catch (e: any) {
-      steps.push({ step: 'ad', status: 'failed', localId: ad.localId, error: e?.message });
-      // Record error on the creative
+      const msg = e instanceof PipeboardError ? e.message : (e?.message || 'ad create lỗi');
+      steps.push({ step: 'ad', status: 'failed', localId: ad.localId, error: msg });
       await supaPatch(token, 'ad_creatives', ad.localCreativeId, {
         status: 'failed',
-        push_error: e?.message || 'ad create lỗi',
+        push_error: msg,
         updated_at: new Date().toISOString(),
       }).catch(() => {});
     }

@@ -233,7 +233,7 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
           </div>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted">
-              Push thật cần env <code className="text-fg bg-raised px-1 py-0.5 rounded">META_SYSTEM_USER_TOKEN</code> ở Vercel. Không token → server tự dry-run.
+              Push qua Pipeboard MCP — cần env <code className="text-fg bg-raised px-1 py-0.5 rounded">PIPEBOARD_API_TOKEN</code> ở Vercel. Không token → server tự dry-run.
             </p>
             <div className="flex gap-2 shrink-0">
               <button
