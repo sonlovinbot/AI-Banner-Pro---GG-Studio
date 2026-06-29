@@ -498,6 +498,13 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
           banners={banners}
           metaAccounts={metaAccounts}
           onClose={() => setPushPreview(null)}
+          onRefresh={async () => {
+            await Promise.all([onRefresh(), refreshAdSets()]);
+          }}
+          onEditCreative={(creativeId) => {
+            const cr = creatives.find(c => c.id === creativeId);
+            if (cr) onEditCreative(cr);
+          }}
           onPushed={async () => {
             await Promise.all([onRefresh(), refreshAdSets()]);
           }}

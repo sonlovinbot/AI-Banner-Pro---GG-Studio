@@ -39,12 +39,22 @@ export function resolveMetaAccount(
 
 export type IssueSeverity = 'error' | 'warning';
 
+export type IssueFix =
+  | { type: 'auto-assign-adset'; creativeId: string; adsetId: string; adsetName: string }
+  | { type: 'edit-creative'; creativeId: string }
+  | { type: 'edit-adset'; adsetId: string }
+  | { type: 'edit-campaign'; campaignId: string };
+
 export interface ValidationIssue {
   level: IssueSeverity;
   scope: 'campaign' | 'adset' | 'creative';
   refId: string;
   field: string;
   message: string;
+  /** Human-friendly name for the offending entity — for nicer error rendering. */
+  displayName?: string;
+  /** Suggested fix the UI can offer as a button. */
+  fix?: IssueFix;
 }
 
 export interface ValidationReport {
@@ -123,23 +133,56 @@ export function validateForPush(
   }
 
   for (const c of campaignCreatives) {
+    const cname = c.name?.trim() || c.headline?.trim() || c.id.slice(0, 8);
+    const addCreative = (
+      level: IssueSeverity,
+      field: string,
+      message: string,
+      fix?: IssueFix,
+    ) => issues.push({
+      level, scope: 'creative', refId: c.id, field, message,
+      displayName: cname,
+      fix,
+    });
+
     if (!c.adsetId || !adsetIdsInCampaign.has(c.adsetId)) {
-      err('creative', c.id, 'adsetId', 'Creative chưa gán ad set thuộc campaign');
+      // Auto-fix: if the campaign has at least one ad set, suggest assigning
+      // to the FIRST one. User can manually re-pick later in Editor.
+      const targetAdset = adSets[0];
+      const fix: IssueFix | undefined = targetAdset
+        ? { type: 'auto-assign-adset', creativeId: c.id, adsetId: targetAdset.id, adsetName: targetAdset.name }
+        : { type: 'edit-creative', creativeId: c.id };
+      addCreative(
+        'error', 'adsetId',
+        `Creative "${cname}" chưa gán Ad Set thuộc campaign`,
+        fix,
+      );
     }
-    if (!c.name?.trim()) warn('creative', c.id, 'name', 'Creative chưa đặt tên');
+    if (!c.name?.trim()) {
+      addCreative('warning', 'name', `Creative "${cname}" chưa đặt tên`,
+        { type: 'edit-creative', creativeId: c.id });
+    }
     if (!c.primaryText?.trim() && !c.headline?.trim()) {
-      err('creative', c.id, 'text', 'Cần ít nhất primaryText hoặc headline');
+      addCreative('error', 'text', `Creative "${cname}" cần ít nhất primaryText hoặc headline`,
+        { type: 'edit-creative', creativeId: c.id });
     }
     if (!c.bannerId) {
-      err('creative', c.id, 'bannerId', 'Creative chưa attach banner (image_hash)');
+      addCreative('error', 'bannerId', `Creative "${cname}" chưa attach banner`,
+        { type: 'edit-creative', creativeId: c.id });
     } else {
       const b = banners.find(x => x.id === c.bannerId);
-      if (!b) err('creative', c.id, 'bannerId', 'Banner không còn tồn tại trong History');
-      else if (!b.imageUrl) err('creative', c.id, 'bannerId', 'Banner thiếu imageUrl');
+      if (!b) addCreative('error', 'bannerId', `Creative "${cname}" — banner không còn tồn tại`,
+        { type: 'edit-creative', creativeId: c.id });
+      else if (!b.imageUrl) addCreative('error', 'bannerId', `Creative "${cname}" — banner thiếu URL`,
+        { type: 'edit-creative', creativeId: c.id });
     }
-    if (!c.cta) warn('creative', c.id, 'cta', 'Chưa chọn CTA (mặc định LEARN_MORE)');
+    if (!c.cta) {
+      addCreative('warning', 'cta', `Creative "${cname}" chưa chọn CTA`,
+        { type: 'edit-creative', creativeId: c.id });
+    }
     if (!c.destinationUrl?.trim() && c.cta !== 'NO_BUTTON' && c.cta !== 'MESSAGE_PAGE') {
-      err('creative', c.id, 'destinationUrl', 'CTA cần destinationUrl');
+      addCreative('error', 'destinationUrl', `Creative "${cname}" — CTA cần destinationUrl`,
+        { type: 'edit-creative', creativeId: c.id });
     }
   }
 

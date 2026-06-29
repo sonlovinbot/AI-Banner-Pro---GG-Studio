@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   X, Send, AlertCircle, CheckCircle, Clipboard, Image as ImageIcon,
-  Layers, Target, FileText, Sparkles, Loader2, ServerCog,
+  Layers, Target, FileText, Sparkles, Loader2, ServerCog, Wand2, Edit3, Zap,
 } from 'lucide-react';
 import { AdCampaign, AdSet, AdCreative, HistoryItem, MetaAccount } from '../../types';
 import {
@@ -9,6 +9,7 @@ import {
   ValidationIssue, MetaPushPayload,
 } from '../../services/metaPushPayload';
 import { pushCampaign, PushResult, PushStepResult, EndpointUnavailableError } from '../../services/metaPushClient';
+import { saveCreativeToCloud } from '../../services/adCreativeService';
 
 interface Props {
   campaign: AdCampaign;
@@ -18,18 +19,74 @@ interface Props {
   metaAccounts: MetaAccount[];
   onClose: () => void;
   onPushed?: () => Promise<void> | void;
+  /** Refresh source-of-truth data after an auto-fix mutates a creative. */
+  onRefresh?: () => Promise<void> | void;
+  /** Open the Creative Editor for manual fixes — caller closes this modal first. */
+  onEditCreative?: (creativeId: string) => void;
 }
 
 type PreviewTab = 'validation' | 'payload' | 'agent' | 'result';
 
-export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, banners, metaAccounts, onClose, onPushed }) => {
+export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, banners, metaAccounts, onClose, onPushed, onRefresh, onEditCreative }) => {
   const [tab, setTab] = useState<PreviewTab>('validation');
   const [pushing, setPushing] = useState<'idle' | 'dry' | 'real'>('idle');
   const [pushResult, setPushResult] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<string | null>(null);   // creativeId being fixed
+  const [fixToast, setFixToast] = useState<string | null>(null);
 
   const campaignAdSets = adSets.filter(a => a.campaignId === campaign.id);
   const campaignCreatives = creatives.filter(c => c.campaignId === campaign.id);
+
+  /** Auto-fix: assign a creative to a target ad set. Saves to cloud + refresh. */
+  const handleAutoAssignAdset = async (creativeId: string, adsetId: string) => {
+    const c = creatives.find(x => x.id === creativeId);
+    if (!c) return;
+    setFixing(creativeId);
+    setFixToast(null);
+    try {
+      await saveCreativeToCloud({ ...c, adsetId, updatedAt: Date.now() });
+      const adsetName = adSets.find(a => a.id === adsetId)?.name || 'ad set';
+      setFixToast(`Đã gán creative "${c.name || c.id.slice(0,8)}" vào "${adsetName}"`);
+      if (onRefresh) await onRefresh();
+      setTimeout(() => setFixToast(null), 3500);
+    } catch (e: any) {
+      setFixToast(`Fix lỗi: ${e?.message || e}`);
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  /** Batch auto-fix: every fixable issue gets applied in sequence. */
+  const handleAutoFixAll = async () => {
+    setFixing('all');
+    setFixToast(null);
+    try {
+      let count = 0;
+      for (const i of report.issues) {
+        if (i.fix?.type === 'auto-assign-adset') {
+          const c = creatives.find(x => x.id === i.fix.creativeId);
+          if (!c) continue;
+          await saveCreativeToCloud({ ...c, adsetId: i.fix.adsetId, updatedAt: Date.now() });
+          count++;
+        }
+      }
+      if (onRefresh) await onRefresh();
+      setFixToast(count > 0 ? `Đã sửa ${count} creative tự động` : 'Không có lỗi nào tự sửa được');
+      setTimeout(() => setFixToast(null), 3500);
+    } catch (e: any) {
+      setFixToast(`Fix lỗi: ${e?.message || e}`);
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  const handleEditCreativeClick = (creativeId: string) => {
+    if (onEditCreative) {
+      onClose();
+      onEditCreative(creativeId);
+    }
+  };
 
   const runPush = async (dryRun: boolean) => {
     setPushError(null);
@@ -134,7 +191,14 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
 
         <div className="flex-1 overflow-y-auto p-5">
           {tab === 'validation' && (
-            <ValidationView issues={report.issues} />
+            <ValidationView
+              issues={report.issues}
+              fixingId={fixing}
+              autoFixableCount={report.issues.filter(i => i.fix?.type === 'auto-assign-adset').length}
+              onAutoFixAll={handleAutoFixAll}
+              onAutoAssignAdset={handleAutoAssignAdset}
+              onEditCreative={handleEditCreativeClick}
+            />
           )}
           {tab === 'payload' && (
             <PayloadView payload={payload} />
@@ -150,6 +214,12 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
         {pushError && (
           <div className="mx-6 mb-3 status-danger border text-sm px-3 py-2.5 rounded-lg flex items-center gap-2">
             <AlertCircle size={14} /> {pushError}
+          </div>
+        )}
+
+        {fixToast && (
+          <div className="mx-6 mb-3 status-success border text-sm px-3 py-2.5 rounded-lg flex items-center gap-2">
+            <CheckCircle size={14} /> {fixToast}
           </div>
         )}
 
@@ -199,7 +269,14 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
 
 // ────────────── Validation tab ──────────────
 
-const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => {
+const ValidationView: React.FC<{
+  issues: ValidationIssue[];
+  fixingId: string | null;
+  autoFixableCount: number;
+  onAutoFixAll: () => void;
+  onAutoAssignAdset: (creativeId: string, adsetId: string) => void;
+  onEditCreative: (creativeId: string) => void;
+}> = ({ issues, fixingId, autoFixableCount, onAutoFixAll, onAutoAssignAdset, onEditCreative }) => {
   if (issues.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -212,7 +289,6 @@ const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => 
     );
   }
 
-  // Group by scope
   const byScope: Record<string, ValidationIssue[]> = {};
   for (const i of issues) (byScope[i.scope] ||= []).push(i);
   const ORDER: ValidationIssue['scope'][] = ['campaign', 'adset', 'creative'];
@@ -224,6 +300,27 @@ const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => 
 
   return (
     <div className="space-y-3">
+      {/* Top-level auto-fix banner */}
+      {autoFixableCount > 0 && (
+        <div className="status-info border rounded-xl p-3 flex items-center gap-3">
+          <Wand2 size={18} className="shrink-0" />
+          <div className="flex-1 text-sm">
+            <p className="font-semibold">{autoFixableCount} lỗi có thể tự sửa</p>
+            <p className="text-xs opacity-80">
+              Creative chưa gán Ad Set → tự gán vào Ad Set đầu tiên của campaign
+            </p>
+          </div>
+          <button
+            onClick={onAutoFixAll}
+            disabled={fixingId === 'all'}
+            className="text-sm bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {fixingId === 'all' ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Sửa tự động hết
+          </button>
+        </div>
+      )}
+
       {ORDER.filter(s => byScope[s]?.length).map(scope => (
         <div key={scope} className="bg-surface border border-line rounded-xl overflow-hidden">
           <header className="px-4 py-2.5 border-b border-line flex items-center gap-2 bg-canvas">
@@ -233,17 +330,40 @@ const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => 
           </header>
           <div className="divide-y divide-line">
             {byScope[scope].map((i, idx) => (
-              <div key={idx} className="px-4 py-2.5 flex items-start gap-3 text-sm">
+              <div key={idx} className="px-4 py-3 flex items-start gap-3 text-sm">
                 <span className={`mt-0.5 shrink-0 ${i.level === 'error' ? 'text-danger' : 'text-warning'}`}>
                   <AlertCircle size={14} />
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-fg">{i.message}</p>
+                  <p className="text-fg leading-relaxed">{i.message}</p>
                   <p className="text-xs text-muted font-mono mt-0.5">
                     {i.scope}.{i.field} · {i.refId.slice(0, 8)}
                   </p>
                 </div>
-                <span className={`text-xs font-mono px-2 py-0.5 rounded-md border ${
+
+                {/* Inline fix button */}
+                {i.fix?.type === 'auto-assign-adset' && (
+                  <button
+                    onClick={() => onAutoAssignAdset(i.fix!.type === 'auto-assign-adset' ? (i.fix as any).creativeId : '', (i.fix as any).adsetId)}
+                    disabled={fixingId === i.refId || fixingId === 'all'}
+                    className="text-xs bg-brand hover:bg-brand-dark text-white px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0 disabled:opacity-50"
+                    title={`Tự động gán vào "${(i.fix as any).adsetName}"`}
+                  >
+                    {fixingId === i.refId ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                    Gán → {(i.fix as any).adsetName.slice(0, 16)}
+                  </button>
+                )}
+                {i.fix?.type === 'edit-creative' && (
+                  <button
+                    onClick={() => onEditCreative((i.fix as any).creativeId)}
+                    className="text-xs bg-canvas hover:bg-raised text-fg border border-line-strong px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0"
+                    title="Mở Editor để sửa"
+                  >
+                    <Edit3 size={11} /> Sửa
+                  </button>
+                )}
+
+                <span className={`text-xs font-mono px-2 py-0.5 rounded-md border shrink-0 ${
                   i.level === 'error' ? 'status-danger' : 'status-warning'
                 }`}>
                   {i.level}
