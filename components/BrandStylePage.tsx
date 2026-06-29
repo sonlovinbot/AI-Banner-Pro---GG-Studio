@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, Palette, Plus, Trash2, Edit3, Save, X, Upload, Image as ImageIcon, FileJson, Clipboard, Cloud, Loader2,
+  ArrowLeft, Palette, Plus, Trash2, Edit3, Save, X, Upload, Image as ImageIcon, FileJson, Clipboard, Cloud, Loader2, Sparkles,
 } from 'lucide-react';
 import { AppPage, BrandProject, LibraryImage } from '../types';
 import { getBrandProjects } from '../services/storageService';
@@ -11,9 +11,10 @@ import {
   bulkMigrateBrandProjects,
 } from '../services/brandProjectService';
 import { compressForLibrary, readImagesFromClipboard, filesToFileList } from '../services/imageUtils';
+import { setStudioHandoff } from '../services/studioHandoffService';
 
 interface Props {
-  onNavigate: (page: AppPage) => void;
+  onNavigate: (page: AppPage, opts?: { adsTab?: string }) => void;
 }
 
 const MAX_REFERENCES = 5;
@@ -58,6 +59,12 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
   const handleNew = () => { setError(null); setEditing(emptyDraft()); };
   const handleEdit = (p: BrandProject) => { setError(null); setEditing({ ...p }); };
   const handleCancel = () => { setEditing(null); setError(null); };
+
+  /** Deep-link to Studio with this brand auto-loaded into the chat context. */
+  const handleBrainstormBrand = (p: BrandProject) => {
+    setStudioHandoff({ source: 'brand-style', brandId: p.id });
+    onNavigate('ads-manager', { adsTab: 'studio' });
+  };
 
   const handleSave = async (project: BrandProject) => {
     if (!project.name.trim()) { setError('Tên brand không được trống.'); return; }
@@ -115,9 +122,9 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
               <ArrowLeft size={20} />
             </button>
             <div className="flex items-center gap-3">
-              <Palette size={20} className="text-pink-400" />
+              <Palette size={20} className="text-brand" />
               <h1 className="text-lg font-bold text-fg">Brand Style</h1>
-              <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
+              <span className="text-xs text-success bg-success-soft border border-success-fg/40 px-2 py-1 rounded-full inline-flex items-center gap-1">
                 <Cloud size={11} /> {loading ? '...' : projects.length} cloud
               </span>
               {/* local badge hidden — migration done */}
@@ -129,7 +136,7 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
               <button
                 onClick={handleMigrateLocal}
                 disabled={migrating}
-                className="text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-3 py-2 rounded-lg flex items-center gap-1.5 border border-amber-500/20 disabled:opacity-50"
+                className="text-xs text-warning hover:text-warning hover:bg-warning-soft px-3 py-2 rounded-lg flex items-center gap-1.5 border border-warning-fg/40 disabled:opacity-50"
               >
                 {migrating ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
                 Migrate local ({localCount})
@@ -138,7 +145,7 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
             {!editing && (
               <button
                 onClick={handleNew}
-                className="text-xs bg-pink-600 hover:bg-pink-500 text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
+                className="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
               >
                 <Plus size={14} /> Tạo Brand mới
               </button>
@@ -164,7 +171,7 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-sm text-subtle mb-6">Tạo brand kit để chèn nhanh khi sinh banner</p>
             <button
               onClick={handleNew}
-              className="bg-pink-600 hover:bg-pink-500 text-white px-6 py-2.5 rounded-lg flex items-center gap-2"
+              className="bg-brand hover:bg-brand-dark text-white px-6 py-2.5 rounded-lg flex items-center gap-2"
             >
               <Plus size={16} /> Tạo Brand đầu tiên
             </button>
@@ -200,39 +207,48 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
                       {p.styleReferences.length + p.productReferences.length + (p.logo ? 1 : 0)} ảnh
                     </span>
                     {p.styleReferences.length > 0 && (
-                      <span className="text-[10px] bg-pink-500/10 text-pink-300 px-1.5 py-0.5 rounded border border-pink-500/20">
+                      <span className="text-[10px] bg-raised text-brand px-1.5 py-0.5 rounded border border-line">
                         style {p.styleReferences.length}
                       </span>
                     )}
                     {p.productReferences.length > 0 && (
-                      <span className="text-[10px] bg-cyan-500/10 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                      <span className="text-[10px] bg-info-soft text-info px-1.5 py-0.5 rounded border border-brand/20">
                         product {p.productReferences.length}
                       </span>
                     )}
                     {p.brandInfo && (
-                      <span className="text-[10px] bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/20">brand info</span>
+                      <span className="text-[10px] bg-canvas text-brand px-1.5 py-0.5 rounded border border-brand/20">brand info</span>
                     )}
                     {p.eventInfo && (
-                      <span className="text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20">event</span>
+                      <span className="text-[10px] bg-warning-soft text-warning px-1.5 py-0.5 rounded border border-warning-fg/40">event</span>
                     )}
                     {p.jsonPrompt && (
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/20">json</span>
+                      <span className="text-[10px] bg-success-soft text-success px-1.5 py-0.5 rounded border border-success-fg/40">json</span>
                     )}
                   </div>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 space-y-1.5">
                     <button
-                      onClick={() => handleEdit(p)}
-                      className="flex-1 text-xs bg-raised hover:bg-raised-2 text-fg py-1.5 rounded-md flex items-center justify-center gap-1"
+                      onClick={() => handleBrainstormBrand(p)}
+                      className="w-full text-sm bg-brand hover:bg-brand-dark text-white py-2 rounded-lg flex items-center justify-center gap-1.5 font-medium"
+                      title="Mở Studio chat AI với brand này đã nạp vào ngữ cảnh"
                     >
-                      <Edit3 size={12} /> Sửa
+                      <Sparkles size={14} /> Brainstorm
                     </button>
-                    <button
-                      onClick={() => setConfirmDelete(p.id)}
-                      className="text-xs bg-raised hover:bg-red-500/80 hover:text-fg text-muted px-3 py-1.5 rounded-md"
-                      title="Xoá"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => handleEdit(p)}
+                        className="flex-1 text-sm bg-canvas hover:bg-raised text-fg border border-line py-1.5 rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <Edit3 size={13} /> Sửa
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(p.id)}
+                        className="text-sm bg-canvas hover:bg-danger-soft hover:text-danger text-muted border border-line px-3 py-1.5 rounded-lg"
+                        title="Xoá"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -248,7 +264,7 @@ export const BrandStylePage: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-sm text-muted mb-6">Hành động này không thể hoàn tác.</p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 rounded-lg bg-raised text-fg hover:bg-raised-2 text-sm">Huỷ</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 text-sm">Xoá</button>
+              <button onClick={() => handleDelete(confirmDelete)} className="px-4 py-2 rounded-lg bg-danger-fg text-white hover:bg-danger-fg text-sm">Xoá</button>
             </div>
           </div>
         </div>
@@ -353,7 +369,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
             <img src={r.url || r.base64} alt="ref" className="w-full h-full object-cover" />
             <button
               onClick={() => removeRef(r.id, slot)}
-              className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-1 right-1 bg-black/70 hover:bg-danger-soft text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <X size={12} />
             </button>
@@ -394,14 +410,14 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
           <button onClick={onCancel} className="text-xs px-3 py-2 rounded-lg bg-raised hover:bg-raised-2 text-fg flex items-center gap-1.5">
             <X size={14} /> Huỷ
           </button>
-          <button onClick={onSave} disabled={busy} className="text-xs px-4 py-2 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white flex items-center gap-1.5 font-medium">
+          <button onClick={onSave} disabled={busy} className="text-xs px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark disabled:opacity-50 text-white flex items-center gap-1.5 font-medium">
             <Save size={14} /> Lưu
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-xs text-red-300">{error}</div>
+        <div className="bg-danger-soft border border-danger-fg/40 rounded-md p-3 text-xs text-danger">{error}</div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -413,7 +429,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
               value={draft.name}
               onChange={(e) => update({ name: e.target.value })}
               placeholder="VD: Coachio Spring 2026"
-              className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-pink-500"
+              className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand"
             />
           </div>
 
@@ -441,7 +457,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
                   <img src={draft.logo.url || draft.logo.base64} alt="logo" className="w-full h-full object-cover" />
                   <button
                     onClick={() => update({ logo: undefined })}
-                    className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-black/70 hover:bg-danger-soft text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X size={12} />
                   </button>
@@ -460,8 +476,8 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
               onChange={(e) => { if (e.target.files) handleLogo(e.target.files); if (logoInput.current) logoInput.current.value = ''; }} />
           </div>
 
-          {renderRefBlock('Style References', 'styleReferences', styleInput, 'text-pink-400')}
-          {renderRefBlock('Product References', 'productReferences', productInput, 'text-cyan-400')}
+          {renderRefBlock('Style References', 'styleReferences', styleInput, 'text-brand')}
+          {renderRefBlock('Product References', 'productReferences', productInput, 'text-info')}
 
           <p className="text-[10px] text-subtle">
             Tổng ảnh: <span className="text-fg">{totalImages}</span> · gợi ý 4–5 ảnh.
@@ -475,7 +491,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
               value={draft.brandInfo}
               onChange={(e) => update({ brandInfo: e.target.value })}
               placeholder="Tên thương hiệu, slogan, tone of voice…"
-              className="w-full h-24 bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-pink-500 resize-none"
+              className="w-full h-24 bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand resize-none"
             />
           </div>
 
@@ -485,7 +501,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
               value={draft.eventInfo}
               onChange={(e) => update({ eventInfo: e.target.value })}
               placeholder="VD: Summer Sale 50% off · diễn ra 01/06–15/06"
-              className="w-full h-24 bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-pink-500 resize-none"
+              className="w-full h-24 bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand resize-none"
             />
           </div>
 
@@ -497,7 +513,7 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
               value={draft.jsonPrompt}
               onChange={(e) => update({ jsonPrompt: e.target.value })}
               placeholder={'{\n  "palette": ["#000", "#fff"],\n  "mood": "minimalist"\n}'}
-              className="w-full h-32 bg-canvas border border-line rounded-md p-3 text-xs font-mono text-fg focus:outline-none focus:border-pink-500 resize-none"
+              className="w-full h-32 bg-canvas border border-line rounded-md p-3 text-xs font-mono text-fg focus:outline-none focus:border-brand resize-none"
             />
             <p className="text-[10px] text-subtle mt-1">Sẽ được nối vào prompt khi áp dụng brand.</p>
           </div>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2, Megaphone } from 'lucide-react';
+import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2, Sparkles } from 'lucide-react';
 import { HistoryItem, AppPage } from '../types';
 import { HistoryEditModal } from './HistoryEditModal';
 import { proxiedBannerUrl } from '../services/cdnProxy';
-import { createCreativeFromBanner } from '../services/adCreativeService';
+import { setStudioHandoff } from '../services/studioHandoffService';
 import {
   getHistory,
   getEmbeddedHistoryCount,
@@ -18,7 +18,7 @@ import {
 import { EMBEDDED_HISTORY } from '../data/embeddedHistory';
 
 interface HistoryPageProps {
-  onNavigate: (page: AppPage) => void;
+  onNavigate: (page: AppPage, opts?: { adsTab?: string }) => void;
 }
 
 export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
@@ -29,7 +29,6 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string; action?: { label: string; onClick: () => void } } | null>(null);
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
-  const [sendingToAds, setSendingToAds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const embeddedCount = getEmbeddedHistoryCount();
   const localCount = getHistory().length;
@@ -51,25 +50,15 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const handleSendToAds = async (item: HistoryItem) => {
-    if (sendingToAds.has(item.id)) return;
-    setSendingToAds(prev => new Set(prev).add(item.id));
-    try {
-      await createCreativeFromBanner(item);
-      setToast({
-        kind: 'ok',
-        msg: 'Đã tạo creative draft',
-        action: { label: 'Mở Ads Manager', onClick: () => onNavigate('ads-manager') },
-      });
-    } catch (e: any) {
-      setToast({ kind: 'err', msg: `Send to Ads lỗi: ${e?.message}` });
-    } finally {
-      setSendingToAds(prev => {
-        const next = new Set(prev);
-        next.delete(item.id);
-        return next;
-      });
-    }
+  /** Brainstorm flow: queue banner attach via localStorage handoff, navigate
+   *  to Studio tab via the new `adsTab` opts hint (deterministic — no relying
+   *  on localStorage to pick the tab). */
+  const handleBrainstormInStudio = (item: HistoryItem) => {
+    setStudioHandoff({
+      source: 'history',
+      bannerIds: [item.id],
+    });
+    onNavigate('ads-manager', { adsTab: 'studio' });
   };
 
   const handleExport = () => {
@@ -171,9 +160,9 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               <ArrowLeft size={20} />
             </button>
             <div className="flex items-center gap-3">
-              <Clock size={20} className="text-emerald-400" />
+              <Clock size={20} className="text-success" />
               <h1 className="text-lg font-bold text-fg">History</h1>
-              <span className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
+              <span className="text-xs text-success bg-success-soft border border-success-fg/40 px-2 py-1 rounded-full inline-flex items-center gap-1">
                 <Cloud size={11} /> {loading ? '...' : items.length} cloud
               </span>
               {/* {localCount} local badge hidden after migration done */}
@@ -185,7 +174,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               <button
                 onClick={handleMigrateLocal}
                 disabled={migrating}
-                className="text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-amber-500/20 disabled:opacity-50"
+                className="text-xs text-warning hover:text-warning hover:bg-warning-soft px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-warning-fg/40 disabled:opacity-50"
               >
                 {migrating ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
                 Migrate local ({localCount})
@@ -206,15 +195,15 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             {false && embeddedCount > 0 && (
               <button
                 onClick={handleRestoreSnapshot}
-                className="text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-emerald-500/20"
+                className="text-xs text-success hover:text-success hover:bg-success-soft px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 border border-success-fg/40"
               >
                 <Database size={14} /> Restore snapshot
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-200 px-1.5 py-0.5 rounded-full">{embeddedCount}</span>
+                <span className="text-[10px] bg-success-soft text-success px-1.5 py-0.5 rounded-full">{embeddedCount}</span>
               </button>
             )}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="text-xs text-sky-300 hover:text-sky-200 hover:bg-sky-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+              className="text-xs text-info hover:text-info hover:bg-info-soft px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
               title="Import từ file JSON"
             >
               <Upload size={14} /> Import
@@ -222,7 +211,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             {items.length > 0 && (
               <button
                 onClick={handleExport}
-                className="text-xs text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+                className="text-xs text-brand hover:text-brand hover:bg-canvas px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
                 title="Export toàn bộ history ra file JSON"
               >
                 <FileJson size={14} /> Export
@@ -231,7 +220,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             {items.length > 0 && (
               <button
                 onClick={() => setShowClearConfirm(true)}
-                className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+                className="text-xs text-danger hover:text-danger hover:bg-danger-soft px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
               >
                 <Trash2 size={14} /> Clear All
               </button>
@@ -250,13 +239,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             <div className="mt-6 flex flex-wrap gap-2 justify-center">
               <button
                 onClick={() => onNavigate('banner')}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg transition-colors text-sm"
+                className="bg-brand hover:bg-brand-dark text-white px-6 py-2 rounded-lg transition-colors text-sm"
               >
                 Go to Banner Tool
               </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="bg-sky-600/20 hover:bg-sky-600/30 text-sky-200 border border-sky-500/30 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
+                className="bg-info-soft hover:bg-info-soft text-info border border-info-fg/40 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
               >
                 <Upload size={16} /> Import JSON
               </button>
@@ -264,7 +253,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               {false && embeddedCount > 0 && (
                 <button
                   onClick={handleRestoreSnapshot}
-                  className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 border border-emerald-500/30 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
+                  className="bg-success-soft hover:bg-success-soft text-success border border-success-fg/40 px-6 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
                 >
                   <Database size={16} /> Restore snapshot ({embeddedCount})
                 </button>
@@ -284,46 +273,46 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                     alt="Banner"
                     className="w-full h-full object-contain"
                   />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={() => handleSendToAds(item)}
-                      disabled={sendingToAds.has(item.id)}
-                      className="bg-amber-600 hover:bg-amber-500 disabled:bg-amber-700 disabled:cursor-not-allowed p-2.5 rounded-full text-white transition-all"
-                      title="Send to Ads Manager (tạo creative draft)"
-                    >
-                      {sendingToAds.has(item.id)
-                        ? <Loader2 size={18} className="animate-spin" />
-                        : <Megaphone size={18} />}
-                    </button>
-                    <button
-                      onClick={() => setEditTarget(item)}
-                      className="bg-indigo-600 hover:bg-indigo-500 p-2.5 rounded-full text-white transition-all"
-                      title="Edit (mở popup chỉnh sửa)"
-                    >
-                      <Wand2 size={18} />
-                    </button>
-                    <button
-                      onClick={() => setSelectedImage(item)}
-                      className="bg-white/10 backdrop-blur-md hover:bg-white/20 p-2.5 rounded-full text-white transition-all"
-                      title="View"
-                    >
-                      <Maximize2 size={18} />
-                    </button>
-                    <a
-                      href={proxiedBannerUrl(item.imageUrl)}
-                      download={`banner-${item.id}.png`}
-                      className="bg-emerald-600 hover:bg-emerald-500 p-2.5 rounded-full text-white transition-all"
-                      title="Download"
-                    >
-                      <Download size={18} />
-                    </a>
-                    <button
-                      onClick={() => handleRemove(item.id)}
-                      className="bg-red-600/80 hover:bg-red-500 p-2.5 rounded-full text-white transition-all"
-                      title="Delete"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/55 transition-colors flex flex-col items-center justify-center gap-3 opacity-0 group-hover:opacity-100">
+                    <div className="flex items-center justify-center gap-2">
+                      <ThumbAction
+                        kind="primary"
+                        icon={<Sparkles size={18} />}
+                        label="Brainstorm"
+                        title="Brainstorm copy với AI ở Studio (banner tự attach)"
+                        onClick={() => handleBrainstormInStudio(item)}
+                      />
+                      <ThumbAction
+                        kind="neutral"
+                        icon={<Wand2 size={18} />}
+                        label="Edit"
+                        title="Chỉnh sửa prompt + version mới"
+                        onClick={() => setEditTarget(item)}
+                      />
+                      <ThumbAction
+                        kind="neutral"
+                        icon={<Maximize2 size={18} />}
+                        label="Xem"
+                        title="Phóng to xem chi tiết"
+                        onClick={() => setSelectedImage(item)}
+                      />
+                      <ThumbAction
+                        kind="neutral"
+                        icon={<Download size={18} />}
+                        label="Tải"
+                        title="Tải ảnh về máy"
+                        as="a"
+                        href={proxiedBannerUrl(item.imageUrl)}
+                        downloadName={`banner-${item.id}.png`}
+                      />
+                      <ThumbAction
+                        kind="danger"
+                        icon={<Trash2 size={18} />}
+                        label="Xoá"
+                        title="Xoá banner khỏi history"
+                        onClick={() => handleRemove(item.id)}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="p-3 border-t border-line">
@@ -356,7 +345,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
                       </span>
                     )}
                     {item.duration && (
-                      <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                      <span className="text-[10px] bg-canvas text-brand px-1.5 py-0.5 rounded border border-brand/20">
                         {item.duration.toFixed(1)}s
                       </span>
                     )}
@@ -389,14 +378,14 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
               <button
                 onClick={() => { setEditTarget(selectedImage); setSelectedImage(null); }}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
+                className="bg-brand hover:bg-brand-dark text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
               >
                 <Wand2 size={18} /> Edit
               </button>
               <a
                 href={proxiedBannerUrl(selectedImage.imageUrl)}
                 download={`banner-full-${selectedImage.id}.png`}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
+                className="bg-brand hover:bg-brand-dark text-white px-6 py-2 rounded-full shadow-lg font-medium flex items-center gap-2"
               >
                 <Download size={18} /> Download
               </a>
@@ -420,8 +409,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
           <div
             className={`px-4 py-3 rounded-lg shadow-2xl text-sm flex items-center gap-3 border-2 backdrop-blur-md ${
               toast.kind === 'ok'
-                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-100'
-                : 'bg-red-500/20 border-red-500/50 text-red-100'
+                ? 'bg-success-soft border-success-fg/50 text-fg'
+                : 'bg-danger-soft border-danger-fg/50 text-fg'
             }`}
           >
             <span className="text-base">{toast.kind === 'ok' ? '✓' : '✕'}</span>
@@ -449,7 +438,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface border border-line rounded-xl p-6 max-w-sm w-full">
             <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle size={24} className="text-red-400" />
+              <AlertTriangle size={24} className="text-danger" />
               <h3 className="text-lg font-bold text-fg">Clear All History?</h3>
             </div>
             <p className="text-sm text-muted mb-6">
@@ -464,7 +453,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               </button>
               <button
                 onClick={handleClearAll}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors text-sm"
+                className="px-4 py-2 rounded-lg bg-danger-fg text-white hover:bg-danger-fg transition-colors text-sm"
               >
                 Delete All
               </button>
@@ -473,5 +462,59 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
         </div>
       )}
     </div>
+  );
+};
+
+// ────────────── Thumbnail action button ──────────────
+
+interface ThumbActionProps {
+  kind: 'primary' | 'neutral' | 'danger';
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  onClick?: () => void;
+  as?: 'button' | 'a';
+  href?: string;
+  downloadName?: string;
+}
+
+/** Hover-reveals a label under the icon so the action is self-explanatory. */
+const ThumbAction: React.FC<ThumbActionProps> = ({
+  kind, icon, label, title, onClick, as = 'button', href, downloadName,
+}) => {
+  // Color discipline: 1 primary (brand), 1 neutral, 1 danger — clearly readable on hover.
+  const baseColor =
+    kind === 'primary' ? 'bg-brand hover:bg-brand-dark text-white' :
+    kind === 'danger'  ? 'text-white' :
+                         'bg-white/15 hover:bg-white/25 text-white backdrop-blur';
+  const dangerStyle = kind === 'danger' ? { background: 'var(--danger-fg)' } as React.CSSProperties : undefined;
+  const labelClass =
+    kind === 'primary' ? 'text-white font-semibold' :
+    kind === 'danger'  ? 'text-white font-semibold' :
+                         'text-white/90 font-medium';
+
+  const inner = (
+    <div className="flex flex-col items-center gap-1">
+      <div
+        className={`p-2.5 rounded-full transition-all ${baseColor}`}
+        style={dangerStyle}
+      >
+        {icon}
+      </div>
+      <span className={`text-[10px] tracking-wide uppercase ${labelClass}`}>{label}</span>
+    </div>
+  );
+
+  if (as === 'a') {
+    return (
+      <a href={href} download={downloadName} title={title} className="block">
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <button onClick={onClick} title={title} type="button">
+      {inner}
+    </button>
   );
 };

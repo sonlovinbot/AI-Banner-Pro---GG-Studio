@@ -1,9 +1,28 @@
 // Bump this when shipping a release. Surfaced in MenuPage footer.
-export const APP_VERSION = '0.10.0';
-export const APP_VERSION_NAME = 'Ads Manager — Sprints 2-5';
-export const APP_RELEASE_DATE = '2026-06-27';
+export const APP_VERSION = '0.11.0';
+export const APP_VERSION_NAME = 'Flow redesign + design system';
+export const APP_RELEASE_DATE = '2026-06-29';
 
 export const APP_CHANGELOG: { version: string; date: string; highlights: string[] }[] = [
+  {
+    version: '0.11.0',
+    date: '2026-06-29',
+    highlights: [
+      'Flow redesign — Studio là HUB duy nhất tạo creative; 3 entry points (History, Campaigns, Brand) đều handoff vào Studio session mới',
+      'CreativeFinalizeModal — 3 step picker (Campaign+AdSet → Banner → Copy) với inline "+ Mới", thay cho orphan creative cũ',
+      'Pinned context per session — Campaign+AdSet+Brand+Banner+Model lưu per chat session',
+      'Studio handoff service in-memory (tránh QuotaExceededError khi localStorage đầy)',
+      'Settings → Storage tab — scan + selective cleanup localStorage theo nhóm (legacy/chat/keys/...), bar quota visual',
+      'Design tokens semantic — light/dark mode WCAG-pass, status colors centralized, no more rainbow tabs',
+      'Color sweep 15+ files — ~150 ad-hoc colors → semantic utility classes, brand orange + neutral slate + status only',
+      'History thumbnails — 5 ThumbActions với label hover (Brainstorm/Edit/Xem/Tải/Xoá), 3-color discipline (brand/neutral/danger)',
+      'Tab order swap — Studio · Library · Campaigns · Queue · Analytics (Library trước cho daily use)',
+      'Brand Style — "Brainstorm" button mỗi brand card → mở Studio với brand auto-nạp',
+      'Campaigns AdSet card — "Brainstorm Creative cho Ad Set" button → Studio với campaign+adset pin',
+      'App.tsx deterministic navigation — onNavigate(page, {adsTab}) thay localStorage roundtrip',
+      'Vite port 3000 → 3100 default (tránh xung đột với dev khác)',
+    ],
+  },
   {
     version: '0.10.0',
     date: '2026-06-27',

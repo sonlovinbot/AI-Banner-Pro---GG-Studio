@@ -62,7 +62,7 @@ const ConfigMissing: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-canvas text-fg p-6">
     <div className="max-w-md w-full bg-surface border border-line rounded-xl p-6 shadow-pop">
       <div className="flex items-center gap-3 mb-3">
-        <div className="bg-amber-500/10 text-amber-500 p-2 rounded-md border border-amber-500/30">
+        <div className="bg-warning-soft text-warning p-2 rounded-md border border-warning-fg/40">
           <AlertCircle size={18} />
         </div>
         <h2 className="text-base font-bold">Supabase chưa cấu hình</h2>
@@ -173,8 +173,8 @@ const LoginScreen: React.FC = () => {
             {msg && (
               <div className={`text-xs rounded-md p-2.5 flex items-start gap-2 border ${
                 msg.kind === 'err'
-                  ? 'bg-red-500/10 border-red-500/30 text-red-400'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  ? 'bg-danger-soft border-danger-fg/40 text-danger'
+                  : 'bg-success-soft border-success-fg/40 text-success'
               }`}>
                 <AlertCircle size={12} className="shrink-0 mt-0.5" />
                 {msg.text}

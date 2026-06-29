@@ -42,7 +42,7 @@ export const BrandPickerModal: React.FC<Props> = ({ selectedId, onClose, onConfi
       <div className="bg-canvas border border-line rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
           <div className="flex items-center gap-3">
-            <div className="bg-pink-500/15 text-pink-300 p-2 rounded-md border border-pink-500/30">
+            <div className="bg-brand text-white p-2 rounded-lg">
               <Palette size={16} />
             </div>
             <div>
@@ -95,14 +95,14 @@ export const BrandPickerModal: React.FC<Props> = ({ selectedId, onClose, onConfi
                     onClick={() => setPicked(p.id)}
                     className={`w-full flex gap-3 text-left p-3 rounded-lg border transition-all ${
                       active
-                        ? 'bg-pink-500/10 border-pink-500/40 ring-2 ring-pink-500/20'
+                        ? 'bg-canvas border-brand ring-2 ring-brand/30'
                         : 'bg-surface border-line hover:border-line-strong'
                     }`}
                   >
                     {p.logo?.url ? (
                       <img src={p.logo.url} alt="" className="w-12 h-12 object-cover rounded border border-line shrink-0" />
                     ) : (
-                      <div className="w-12 h-12 rounded bg-pink-500/15 text-pink-300 flex items-center justify-center text-sm font-bold shrink-0">
+                      <div className="w-12 h-12 rounded bg-brand text-white flex items-center justify-center text-sm font-bold shrink-0">
                         {p.name.slice(0, 2).toUpperCase()}
                       </div>
                     )}
@@ -145,7 +145,7 @@ export const BrandPickerModal: React.FC<Props> = ({ selectedId, onClose, onConfi
             <button
               onClick={confirm}
               disabled={!picked}
-              className="text-xs px-4 py-2 rounded-md bg-pink-600 hover:bg-pink-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium shadow-pop"
+              className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
             >
               Nạp vào chat
             </button>

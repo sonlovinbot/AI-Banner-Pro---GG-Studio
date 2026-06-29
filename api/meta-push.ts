@@ -29,9 +29,11 @@ const META_BASE = `https://graph.facebook.com/${META_VERSION}`;
 interface PushRequestBody {
   campaignId: string;
   dryRun?: boolean;
-  /** Optional override — by default uses PAUSED. */
-  initialStatus?: 'PAUSED' | 'ACTIVE';
 }
+
+// SAFETY: every push from this app goes up as PAUSED. The user reviews + activates
+// inside Meta Ads Manager manually. No override available — this is a hard rule.
+const FORCED_INITIAL_STATUS: 'PAUSED' = 'PAUSED';
 
 interface PushResultPerStep {
   step: string;
@@ -327,8 +329,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const validation = validateForPush(campaign, adSets, creatives, banners, metaAccounts);
-  const initialStatus = body.initialStatus || 'PAUSED';
-  const payload = buildMetaPayload(campaign, adSets, creatives, banners, metaAccounts, { initialStatus });
+  const payload = buildMetaPayload(campaign, adSets, creatives, banners, metaAccounts, { initialStatus: FORCED_INITIAL_STATUS });
 
   const metaToken = process.env.META_SYSTEM_USER_TOKEN;
   const dryRun = body.dryRun === true || !metaToken;

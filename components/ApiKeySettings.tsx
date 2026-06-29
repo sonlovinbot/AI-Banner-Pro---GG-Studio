@@ -106,7 +106,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
             <span className="flex items-center justify-center gap-2">
               <Sparkles size={14} />
               Google Gemini
-              {googleSaved && <span className="w-2 h-2 bg-green-400 rounded-full"></span>}
+              {googleSaved && <span className="w-2 h-2 bg-success-fg rounded-full"></span>}
             </span>
             {activeTab === 'google' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500" />
@@ -123,7 +123,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
             <span className="flex items-center justify-center gap-2">
               <Sparkles size={14} />
               Coachio AI
-              {coachioSaved && <span className="w-2 h-2 bg-green-400 rounded-full"></span>}
+              {coachioSaved && <span className="w-2 h-2 bg-success-fg rounded-full"></span>}
             </span>
             {activeTab === 'coachio' && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
@@ -173,9 +173,9 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               </div>
 
               {googleSaved && googleKey && (
-                <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3 flex items-center gap-2">
-                  <CheckCircle size={14} className="text-green-400" />
-                  <span className="text-xs text-green-400">Saved: <span className="font-mono">{maskKey(googleKey)}</span></span>
+                <div className="bg-success-fg/5 border border-green-500/20 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle size={14} className="text-success" />
+                  <span className="text-xs text-success">Saved: <span className="font-mono">{maskKey(googleKey)}</span></span>
                 </div>
               )}
             </div>
@@ -184,7 +184,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               {googleSaved && googleKey && (
                 <button
                   onClick={handleGoogleRemove}
-                  className="px-4 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-colors"
+                  className="px-4 py-2.5 rounded-lg text-sm text-red-400 hover:bg-danger-fg/10 border border-red-500/20 transition-colors"
                 >
                   Remove Key
                 </button>
@@ -246,7 +246,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               {coachioStatus !== 'idle' && (
                 <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${
                   coachioStatus === 'validating' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                  coachioStatus === 'valid' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
+                  coachioStatus === 'valid' ? 'bg-success-fg/10 border-green-500/20 text-success' :
                   'bg-red-500/10 border-red-500/20 text-red-400'
                 }`}>
                   {coachioStatus === 'validating' && <><Loader2 size={14} className="animate-spin" /> Validating...</>}
@@ -256,9 +256,9 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               )}
 
               {coachioSaved && coachioKey && (
-                <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3 flex items-center gap-2">
-                  <CheckCircle size={14} className="text-green-400" />
-                  <span className="text-xs text-green-400">Saved: <span className="font-mono">{maskKey(coachioKey)}</span></span>
+                <div className="bg-success-fg/5 border border-green-500/20 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle size={14} className="text-success" />
+                  <span className="text-xs text-success">Saved: <span className="font-mono">{maskKey(coachioKey)}</span></span>
                 </div>
               )}
 
@@ -287,7 +287,7 @@ export const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ onClose }) => {
               {coachioSaved && coachioKey && (
                 <button
                   onClick={handleCoachioRemove}
-                  className="px-4 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-colors"
+                  className="px-4 py-2.5 rounded-lg text-sm text-red-400 hover:bg-danger-fg/10 border border-red-500/20 transition-colors"
                 >
                   Remove Key
                 </button>

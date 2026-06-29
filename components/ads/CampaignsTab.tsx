@@ -32,9 +32,13 @@ interface Props {
   loading: boolean;
   onRefresh: () => Promise<void> | void;
   onEditCreative: (c: AdCreative) => void;
+  /** Deep-link: queue a Studio handoff with campaign+adset pinned, then
+   *  switch the Ads Manager tab to Studio. */
+  onBrainstormForAdSet?: (campaignId: string, adsetId: string) => void;
 }
 
-export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, loading, onRefresh, onEditCreative }) => {
+export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, loading, onRefresh, onEditCreative, onBrainstormForAdSet }) => {
+  const handleBrainstorm = onBrainstormForAdSet || ((_c: string, _a: string) => {});
   const [showWizard, setShowWizard] = useState(false);
   const [adSets, setAdSets] = useState<AdSet[]>([]);
   const [adSetsLoading, setAdSetsLoading] = useState(true);
@@ -213,7 +217,7 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
       </div>
 
       {(error || adSetsError) && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
+        <div className="bg-danger-soft border border-danger-fg/40 text-danger text-xs px-3 py-2 rounded flex items-center gap-2">
           <AlertCircle size={12} /> {error || adSetsError}
         </div>
       )}
@@ -295,7 +299,7 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                   <button
                     onClick={() => handleDeleteCampaign(c)}
                     disabled={working === c.id}
-                    className="text-muted hover:text-red-400 p-1.5 rounded hover:bg-red-500/10"
+                    className="text-muted hover:text-danger p-1.5 rounded hover:bg-danger-soft"
                     title="Xoá campaign"
                   >
                     {working === c.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
@@ -358,17 +362,17 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                               <button
                                 onClick={() => handleDeleteAdSet(a)}
                                 disabled={working === a.id}
-                                className="text-muted hover:text-red-400 p-1 rounded hover:bg-red-500/10"
+                                className="text-muted hover:text-danger p-1 rounded hover:bg-danger-soft"
                                 title="Xoá ad set"
                               >
                                 {working === a.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={11} />}
                               </button>
                             </div>
                             {aOpen && (
-                              <div className="border-t border-line px-3 py-2 bg-canvas/40">
+                              <div className="border-t border-line px-3 py-2 bg-canvas/40 space-y-2">
                                 {aCreatives.length === 0 ? (
-                                  <p className="text-[11px] text-subtle text-center py-2">
-                                    Chưa có creative. Vào tab Library/Studio, gán creative vào ad set này khi sửa.
+                                  <p className="text-xs text-muted text-center py-2">
+                                    Chưa có creative trong ad set này.
                                   </p>
                                 ) : (
                                   <div className="space-y-1">
@@ -391,6 +395,15 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                                     })}
                                   </div>
                                 )}
+
+                                {/* Deep-link entry to Studio with this campaign+adset pinned */}
+                                <button
+                                  onClick={() => handleBrainstorm(c.id, a.id)}
+                                  className="w-full flex items-center justify-center gap-1.5 text-sm text-brand hover:bg-brand-soft border border-dashed border-brand/40 rounded-lg py-2 font-medium transition-colors"
+                                  title="Mở Studio, chat AI viết copy, lưu thẳng vào ad set này"
+                                >
+                                  <Sparkles size={14} /> Brainstorm Creative cho Ad Set này
+                                </button>
                               </div>
                             )}
                           </div>
@@ -497,12 +510,18 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
 // ────────────── Status dot (one-color spec) ──────────────
 
 const StatusDot: React.FC<{ status: AdCampaignStatus | AdSetStatus }> = ({ status }) => {
-  const color =
-    status === 'active'   ? 'bg-emerald-500' :
-    status === 'paused'   ? 'bg-amber-400' :
-    status === 'archived' ? 'bg-subtle' :
-    'bg-muted';
-  return <span title={status} className={`w-1.5 h-1.5 rounded-full ${color} inline-block shrink-0`} />;
+  const varName =
+    status === 'active'   ? 'var(--success-fg)' :
+    status === 'paused'   ? 'var(--warning-fg)' :
+    status === 'archived' ? 'var(--fg-subtle)' :
+    'var(--fg-muted)';
+  return (
+    <span
+      title={status}
+      style={{ background: varName }}
+      className="w-2 h-2 rounded-full inline-block shrink-0"
+    />
+  );
 };
 
 // ────────────── Thumbnail bits ──────────────
@@ -706,7 +725,7 @@ const CampaignEditor: React.FC<CampaignEditorProps> = ({ campaign, metaAccounts,
           </Field>
           <Field label="Meta Account *">
             {metaAccounts.length === 0 ? (
-              <div className="bg-amber-500/5 border border-amber-500/30 rounded-md px-3 py-2 text-[11px] text-amber-200">
+              <div className="status-warning border rounded-lg px-3 py-2 text-sm">
                 Chưa có Meta Account nào. Vào <b className="text-fg">Settings → Meta Accounts</b> để thêm trước.
               </div>
             ) : (
@@ -758,7 +777,7 @@ const CampaignEditor: React.FC<CampaignEditorProps> = ({ campaign, metaAccounts,
         </Field>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
+          <div className="bg-danger-soft border border-danger-fg/40 text-danger text-xs px-3 py-2 rounded flex items-center gap-2">
             <AlertCircle size={12} /> {error}
           </div>
         )}
@@ -1052,7 +1071,7 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, onClose, onS
         </label>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
+          <div className="bg-danger-soft border border-danger-fg/40 text-danger text-xs px-3 py-2 rounded flex items-center gap-2">
             <AlertCircle size={12} /> {error}
           </div>
         )}
@@ -1192,29 +1211,29 @@ const AdSetSetupGuide: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto py-6 px-4">
-      <div className="bg-surface border-2 border-amber-500/30 rounded-xl p-5">
+      <div className="bg-surface border border-line rounded-xl p-5">
         <div className="flex items-center gap-3 mb-3">
-          <div className="bg-amber-500/15 text-amber-300 p-2 rounded-md border border-amber-500/30">
-            <AlertCircle size={16} />
+          <div className="status-warning border p-2 rounded-lg">
+            <AlertCircle size={18} />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-fg">Cần chạy SQL để bật Campaign Manager</h2>
-            <p className="text-[11px] text-muted">Thêm bảng <code className="text-amber-300">ad_sets</code> + 6 cột mới cho ad_campaigns + 1 cột cho ad_creatives.</p>
+            <h2 className="text-base font-bold text-fg">Cần chạy SQL để bật Campaign Manager</h2>
+            <p className="text-sm text-muted">File SQL đầy đủ ở <code className="bg-canvas text-fg px-1.5 py-0.5 rounded font-mono">db/setup.sql</code> trong repo, hoặc copy block dưới.</p>
           </div>
         </div>
-        <ol className="text-xs text-muted space-y-1.5 mb-3 list-decimal list-inside">
+        <ol className="text-sm text-muted space-y-1.5 mb-3 list-decimal list-inside">
           <li>Vào Supabase → <b className="text-fg">SQL Editor</b> → <b className="text-fg">New query</b></li>
-          <li>Paste block SQL bên dưới (Copy bên cạnh)</li>
+          <li>Paste block SQL bên dưới (bấm Copy)</li>
           <li>Run → reload page (F5)</li>
         </ol>
-        <div className="bg-canvas border border-line rounded-md overflow-hidden">
-          <div className="px-3 py-1.5 border-b border-line flex items-center justify-between bg-surface/60">
-            <span className="text-[11px] font-mono text-subtle">campaign-manager.sql</span>
+        <div className="bg-canvas border border-line rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-line flex items-center justify-between bg-surface">
+            <span className="text-xs font-mono text-muted">db/setup.sql</span>
             <button
               onClick={copy}
-              className="text-xs bg-brand hover:bg-brand-dark text-white px-2.5 py-1 rounded flex items-center gap-1 shadow-pop"
+              className="text-sm bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium"
             >
-              {copied ? '✓ Đã copy' : <><Clipboard size={11} /> Copy</>}
+              {copied ? '✓ Đã copy' : <><Clipboard size={12} /> Copy</>}
             </button>
           </div>
           <pre className="text-[10px] font-mono text-fg/80 p-3 overflow-x-auto max-h-[360px] whitespace-pre">

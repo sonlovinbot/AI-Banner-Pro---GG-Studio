@@ -8,7 +8,7 @@ import {
   buildMetaPayload, buildMcpAgentPrompt, validateForPush,
   ValidationIssue, MetaPushPayload,
 } from '../../services/metaPushPayload';
-import { pushCampaign, PushResult, PushStepResult } from '../../services/metaPushClient';
+import { pushCampaign, PushResult, PushStepResult, EndpointUnavailableError } from '../../services/metaPushClient';
 
 interface Props {
   campaign: AdCampaign;
@@ -42,7 +42,22 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
         await onPushed();
       }
     } catch (e: any) {
-      setPushError(e?.message || 'Push lỗi');
+      // If Edge function is not deployed (Vite dev mode), fall back to local
+      // dry-run using the same payload we already computed for the preview tabs.
+      if (e instanceof EndpointUnavailableError && dryRun) {
+        setPushResult({
+          mode: 'dry-run',
+          success: report.canPush,
+          campaignId: campaign.id,
+          payload,
+          errors: report.errors.map(x => `[${x.scope}.${x.field}] ${x.message}`),
+          warnings: report.warnings.map(x => `[${x.scope}.${x.field}] ${x.message}`),
+          message: `Edge function chưa available (${e.message}). Đây là dry-run client-side, dùng cùng validator + payload builder.`,
+        });
+        setTab('result');
+      } else {
+        setPushError(e?.message || 'Push lỗi');
+      }
     } finally {
       setPushing('idle');
     }
@@ -64,52 +79,50 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-canvas border border-line rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="bg-brand/15 text-brand p-2 rounded-md border border-brand/30">
-              <Send size={16} />
+            <div className="bg-brand text-white p-2 rounded-lg shrink-0">
+              <Send size={18} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-fg truncate">Meta push preview · {campaign.name}</h3>
-              <p className="text-[11px] text-subtle">
-                {campaignAdSets.length} ad set · {campaignCreatives.length} creative · {payload.uploads.length} image upload
+              <h3 className="text-base font-semibold text-fg truncate">Meta push preview</h3>
+              <p className="text-sm text-muted truncate">
+                {campaign.name} · {campaignAdSets.length} ad set · {campaignCreatives.length} creative
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg">
-            <X size={16} />
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-raised text-muted hover:text-fg">
+            <X size={18} />
           </button>
         </header>
 
         {/* Top status banner */}
-        <div className={`px-5 py-2.5 border-b border-line text-xs flex items-center gap-2 ${
-          report.canPush
-            ? 'bg-emerald-500/5 text-emerald-300'
-            : 'bg-red-500/5 text-red-300'
+        <div className={`px-6 py-3 border-b border-line text-sm flex items-center gap-2 ${
+          report.canPush ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'
         }`}>
-          {report.canPush ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
-          <span className="flex-1">
+          {report.canPush ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+          <span className="flex-1 font-medium">
             {report.canPush
               ? `Sẵn sàng push — ${report.warnings.length} cảnh báo, 0 lỗi`
               : `Chưa thể push — ${report.errors.length} lỗi, ${report.warnings.length} cảnh báo`}
           </span>
-          <span className="text-[10px] font-mono text-subtle">Meta API {payload.apiVersion}</span>
+          <span className="text-xs font-mono opacity-70">Meta API {payload.apiVersion}</span>
         </div>
 
-        <div className="border-b border-line bg-surface/30 px-5">
+        <div className="border-b border-line bg-surface px-6">
           <div className="flex gap-1">
             {([
-              { id: 'validation', label: `Validation (${report.issues.length})`, icon: <AlertCircle size={12} /> },
-              { id: 'payload',    label: 'Meta API payload',              icon: <FileText size={12} /> },
-              { id: 'agent',      label: 'Agent prompt (MCP)',            icon: <Sparkles size={12} /> },
-              ...(pushResult ? [{ id: 'result', label: `Push result · ${pushResult.mode}`, icon: <ServerCog size={12} /> }] : []),
+              { id: 'validation', label: `Validation (${report.issues.length})`, icon: <AlertCircle size={14} /> },
+              { id: 'payload',    label: 'Meta API payload',              icon: <FileText size={14} /> },
+              { id: 'agent',      label: 'Agent prompt (MCP)',            icon: <Sparkles size={14} /> },
+              ...(pushResult ? [{ id: 'result', label: `Push result · ${pushResult.mode}`, icon: <ServerCog size={14} /> }] : []),
             ] as { id: PreviewTab; label: string; icon: React.ReactNode }[]).map(t => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`text-xs px-3 py-2 border-b-2 transition-colors flex items-center gap-1.5 ${
+                className={`text-sm px-3 py-3 border-b-2 transition-colors flex items-center gap-2 font-medium ${
                   tab === t.id ? 'border-brand text-brand' : 'border-transparent text-muted hover:text-fg'
                 }`}
               >
@@ -135,41 +148,48 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
         </div>
 
         {pushError && (
-          <div className="mx-5 mb-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
-            <AlertCircle size={12} /> {pushError}
+          <div className="mx-6 mb-3 status-danger border text-sm px-3 py-2.5 rounded-lg flex items-center gap-2">
+            <AlertCircle size={14} /> {pushError}
           </div>
         )}
 
-        <footer className="px-5 py-3 border-t border-line bg-surface/60 flex items-center justify-between gap-2">
-          <p className="text-[10px] text-subtle">
-            Push thật cần env <code className="text-fg">META_SYSTEM_USER_TOKEN</code> ở Vercel.
-            Không có token → dry-run.
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => runPush(true)}
-              disabled={pushing !== 'idle'}
-              className="text-xs px-3 py-2 rounded-md bg-raised hover:bg-raised-2 text-fg flex items-center gap-1.5 disabled:opacity-50"
-              title="Gọi Edge function ở chế độ dry-run, không POST lên Meta"
-            >
-              {pushing === 'dry' ? <Loader2 size={12} className="animate-spin" /> : <ServerCog size={12} />}
-              Test (dry-run)
-            </button>
-            <button
-              onClick={() => {
-                if (!report.canPush) return;
-                if (!confirm('Push lên Meta? Status mặc định PAUSED, bạn review trên Ads Manager rồi activate.')) return;
-                runPush(false);
-              }}
-              disabled={pushing !== 'idle' || !report.canPush}
-              className="text-xs px-4 py-2 rounded-md bg-brand hover:bg-brand-dark text-white font-medium shadow-pop flex items-center gap-1.5 disabled:opacity-50 disabled:shadow-none"
-            >
-              {pushing === 'real' ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              Push to Meta
-            </button>
-            <button onClick={onClose} className="text-xs px-3 py-2 rounded-md text-muted hover:text-fg">
-              Đóng
-            </button>
+        <footer className="px-6 py-4 border-t border-line bg-surface space-y-3">
+          <div className="flex items-start gap-2 status-warning border px-3 py-2 rounded-lg text-sm">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <span>
+              Mọi push từ app này lên Meta đều ở trạng thái <b>PAUSED</b>. Bạn review + activate thủ công trên Meta Ads Manager.
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">
+              Push thật cần env <code className="text-fg bg-raised px-1 py-0.5 rounded">META_SYSTEM_USER_TOKEN</code> ở Vercel. Không token → server tự dry-run.
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => runPush(true)}
+                disabled={pushing !== 'idle'}
+                className="text-sm px-4 py-2 rounded-lg bg-canvas hover:bg-raised text-fg border border-line-strong flex items-center gap-2 disabled:opacity-50 font-medium"
+                title="Gọi Edge function ở chế độ dry-run, không POST lên Meta"
+              >
+                {pushing === 'dry' ? <Loader2 size={14} className="animate-spin" /> : <ServerCog size={14} />}
+                Test (dry-run)
+              </button>
+              <button
+                onClick={() => {
+                  if (!report.canPush) return;
+                  if (!confirm('Push lên Meta (PAUSED)?\nTất cả ad sẽ tạo ở trạng thái paused — bạn vào Meta Ads Manager review + activate thủ công.')) return;
+                  runPush(false);
+                }}
+                disabled={pushing !== 'idle' || !report.canPush}
+                className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-semibold flex items-center gap-2 disabled:opacity-50"
+              >
+                {pushing === 'real' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                Push to Meta (PAUSED)
+              </button>
+              <button onClick={onClose} className="text-sm px-3 py-2 rounded-lg text-muted hover:text-fg hover:bg-raised">
+                Đóng
+              </button>
+            </div>
           </div>
         </footer>
       </div>
@@ -182,12 +202,12 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
 const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => {
   if (issues.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center justify-center mb-3">
-          <CheckCircle size={24} />
+      <div className="py-16 text-center">
+        <div className="mx-auto w-14 h-14 rounded-full status-success border flex items-center justify-center mb-4">
+          <CheckCircle size={28} />
         </div>
-        <p className="text-sm font-semibold text-fg">Không có vấn đề gì</p>
-        <p className="text-[11px] text-subtle">Tất cả required fields đã đầy đủ — payload sẵn sàng.</p>
+        <p className="text-base font-semibold text-fg">Không có vấn đề gì</p>
+        <p className="text-sm text-muted mt-1">Tất cả required fields đã đầy đủ — payload sẵn sàng.</p>
       </div>
     );
   }
@@ -197,36 +217,34 @@ const ValidationView: React.FC<{ issues: ValidationIssue[] }> = ({ issues }) => 
   for (const i of issues) (byScope[i.scope] ||= []).push(i);
   const ORDER: ValidationIssue['scope'][] = ['campaign', 'adset', 'creative'];
   const ICON: Record<ValidationIssue['scope'], React.ReactNode> = {
-    campaign: <Layers size={12} />,
-    adset:    <Target size={12} />,
-    creative: <ImageIcon size={12} />,
+    campaign: <Layers size={14} />,
+    adset:    <Target size={14} />,
+    creative: <ImageIcon size={14} />,
   };
 
   return (
     <div className="space-y-3">
       {ORDER.filter(s => byScope[s]?.length).map(scope => (
-        <div key={scope} className="bg-surface border border-line rounded-lg overflow-hidden">
-          <header className="px-3 py-2 border-b border-line flex items-center gap-2 bg-canvas/40">
+        <div key={scope} className="bg-surface border border-line rounded-xl overflow-hidden">
+          <header className="px-4 py-2.5 border-b border-line flex items-center gap-2 bg-canvas">
             <span className="text-muted">{ICON[scope]}</span>
-            <span className="text-xs font-semibold text-fg capitalize">{scope}</span>
-            <span className="text-[10px] text-subtle">({byScope[scope].length})</span>
+            <span className="text-sm font-semibold text-fg capitalize">{scope}</span>
+            <span className="text-xs text-muted">({byScope[scope].length})</span>
           </header>
           <div className="divide-y divide-line">
             {byScope[scope].map((i, idx) => (
-              <div key={idx} className="px-3 py-2 flex items-start gap-2 text-xs">
-                <span className={`mt-0.5 shrink-0 ${i.level === 'error' ? 'text-red-300' : 'text-amber-300'}`}>
-                  {i.level === 'error' ? <AlertCircle size={12} /> : <AlertCircle size={12} />}
+              <div key={idx} className="px-4 py-2.5 flex items-start gap-3 text-sm">
+                <span className={`mt-0.5 shrink-0 ${i.level === 'error' ? 'text-danger' : 'text-warning'}`}>
+                  <AlertCircle size={14} />
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-fg">{i.message}</p>
-                  <p className="text-[10px] text-subtle font-mono">
+                  <p className="text-xs text-muted font-mono mt-0.5">
                     {i.scope}.{i.field} · {i.refId.slice(0, 8)}
                   </p>
                 </div>
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                  i.level === 'error'
-                    ? 'bg-red-500/15 text-red-300 border border-red-500/30'
-                    : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                <span className={`text-xs font-mono px-2 py-0.5 rounded-md border ${
+                  i.level === 'error' ? 'status-danger' : 'status-warning'
                 }`}>
                   {i.level}
                 </span>
@@ -286,19 +304,19 @@ const Section: React.FC<{ icon: React.ReactNode; title: string; body: string; co
     try { await navigator.clipboard.writeText(copyText); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
   return (
-    <div className="bg-surface border border-line rounded-lg overflow-hidden">
-      <header className="px-3 py-2 border-b border-line flex items-center gap-2 bg-canvas/40">
+    <div className="bg-surface border border-line rounded-xl overflow-hidden">
+      <header className="px-4 py-2.5 border-b border-line flex items-center gap-2 bg-canvas">
         <span className="text-muted">{icon}</span>
-        <span className="text-xs font-semibold text-fg flex-1">{title}</span>
+        <span className="text-sm font-semibold text-fg flex-1">{title}</span>
         <button
           onClick={copy}
-          className="text-[10px] text-muted hover:text-fg flex items-center gap-1 px-2 py-1 rounded border border-line hover:border-line-strong"
+          className="text-xs text-muted hover:text-fg flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-line-strong hover:bg-raised"
         >
-          <Clipboard size={10} />
+          <Clipboard size={12} />
           {copied ? 'Đã copy' : 'Copy JSON'}
         </button>
       </header>
-      <pre className="text-[10px] font-mono text-fg/85 p-3 overflow-x-auto whitespace-pre max-h-[280px]">
+      <pre className="text-xs font-mono text-fg p-3 overflow-x-auto whitespace-pre max-h-[280px] bg-canvas">
         {body}
       </pre>
     </div>
@@ -318,65 +336,63 @@ const STEP_ICON: Record<PushStepResult['step'], React.ReactNode> = {
 const ResultView: React.FC<{ result: PushResult }> = ({ result }) => {
   return (
     <div className="space-y-3">
-      <div className={`p-4 rounded-lg border ${
-        result.success
-          ? 'bg-emerald-500/5 border-emerald-500/30 text-emerald-200'
-          : 'bg-red-500/5 border-red-500/30 text-red-200'
+      <div className={`p-4 rounded-xl border ${
+        result.success ? 'status-success' : 'status-danger'
       }`}>
         <div className="flex items-center gap-2 mb-1">
-          {result.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-          <span className="text-sm font-semibold">
+          {result.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          <span className="text-base font-semibold">
             {result.mode === 'dry-run' ? 'Dry-run' : 'Push'}
             {result.success ? ' thành công' : ' có lỗi'}
           </span>
         </div>
         {result.message && (
-          <p className="text-xs">{result.message}</p>
+          <p className="text-sm leading-relaxed">{result.message}</p>
         )}
         {result.metaCampaignId && (
-          <p className="text-[11px] mt-1 font-mono">
-            Meta campaign id: <span className="text-fg">{result.metaCampaignId}</span>
+          <p className="text-sm mt-2 font-mono">
+            Meta campaign id: <span className="text-fg font-semibold">{result.metaCampaignId}</span>
           </p>
         )}
       </div>
 
       {result.errors && result.errors.length > 0 && (
-        <div className="bg-surface border border-line rounded-lg p-3 space-y-1">
-          <p className="text-[10px] uppercase tracking-wider text-red-300 font-mono">Errors ({result.errors.length})</p>
+        <div className="bg-surface border border-line rounded-xl p-4 space-y-1">
+          <p className="text-xs uppercase tracking-wider text-danger font-mono mb-2">Errors ({result.errors.length})</p>
           {result.errors.map((e, i) => (
-            <p key={i} className="text-xs text-red-200">• {e}</p>
+            <p key={i} className="text-sm text-fg">• {e}</p>
           ))}
         </div>
       )}
 
       {result.warnings && result.warnings.length > 0 && (
-        <div className="bg-surface border border-line rounded-lg p-3 space-y-1">
-          <p className="text-[10px] uppercase tracking-wider text-amber-300 font-mono">Warnings ({result.warnings.length})</p>
+        <div className="bg-surface border border-line rounded-xl p-4 space-y-1">
+          <p className="text-xs uppercase tracking-wider text-warning font-mono mb-2">Warnings ({result.warnings.length})</p>
           {result.warnings.map((w, i) => (
-            <p key={i} className="text-xs text-amber-200">• {w}</p>
+            <p key={i} className="text-sm text-fg">• {w}</p>
           ))}
         </div>
       )}
 
       {result.steps && result.steps.length > 0 && (
-        <div className="bg-surface border border-line rounded-lg overflow-hidden">
-          <header className="px-3 py-2 border-b border-line bg-canvas/40">
-            <p className="text-[10px] uppercase tracking-wider text-subtle font-mono">Steps ({result.steps.length})</p>
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <header className="px-4 py-2.5 border-b border-line bg-canvas">
+            <p className="text-xs uppercase tracking-wider text-muted font-mono">Steps ({result.steps.length})</p>
           </header>
           <div className="divide-y divide-line">
             {result.steps.map((s, i) => (
-              <div key={i} className="px-3 py-2 flex items-center gap-2 text-xs">
+              <div key={i} className="px-4 py-2.5 flex items-center gap-2 text-sm">
                 <span className="text-muted">{STEP_ICON[s.step]}</span>
                 <span className="font-mono text-fg w-20">{s.step}</span>
-                {s.localId && <span className="text-[10px] text-subtle font-mono">{s.localId.slice(0, 8)}</span>}
-                {s.metaId && <span className="text-[10px] text-emerald-300 font-mono">→ {s.metaId}</span>}
-                {s.imageHash && <span className="text-[10px] text-emerald-300 font-mono">hash: {s.imageHash.slice(0, 12)}…</span>}
+                {s.localId && <span className="text-xs text-muted font-mono">{s.localId.slice(0, 8)}</span>}
+                {s.metaId && <span className="text-xs text-success font-mono">→ {s.metaId}</span>}
+                {s.imageHash && <span className="text-xs text-success font-mono">hash: {s.imageHash.slice(0, 12)}…</span>}
                 <span className="flex-1" />
-                {s.error && <span className="text-[10px] text-red-300 truncate max-w-[280px]" title={s.error}>{s.error}</span>}
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                  s.status === 'ok'      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
-                  s.status === 'failed'  ? 'bg-red-500/15 text-red-300 border border-red-500/30' :
-                                           'bg-raised text-muted border border-line'
+                {s.error && <span className="text-xs text-danger truncate max-w-[280px]" title={s.error}>{s.error}</span>}
+                <span className={`text-xs font-mono px-2 py-0.5 rounded-md border ${
+                  s.status === 'ok'     ? 'status-success' :
+                  s.status === 'failed' ? 'status-danger' :
+                                          'bg-raised text-muted border-line'
                 }`}>
                   {s.status}
                 </span>
@@ -398,31 +414,29 @@ const AgentView: React.FC<{ prompt: string }> = ({ prompt }) => {
   };
   return (
     <div className="space-y-3">
-      <div className="bg-surface border border-line rounded-lg p-3 text-[11px] text-muted space-y-1">
+      <div className="bg-surface border border-line rounded-xl p-4 text-sm text-muted space-y-1.5 leading-relaxed">
         <p>
           <b className="text-fg">Cách dùng:</b> copy prompt bên dưới → paste vào Claude (Desktop) hoặc OpenClaw đã enable Pipeboard MCP.
         </p>
+        <p>Agent sẽ chạy từng step (upload image → campaign → adsets → creatives → ads) và return Meta IDs.</p>
         <p>
-          Agent sẽ chạy từng step (upload image → campaign → adsets → creatives → ads) và return Meta IDs.
-        </p>
-        <p className="text-subtle">
-          Initial status mặc định <code className="bg-canvas text-fg px-1 rounded">PAUSED</code> — review trên Meta trước khi activate.
+          Initial status <code className="bg-canvas text-fg px-1.5 py-0.5 rounded font-mono">PAUSED</code> — review trên Meta trước khi activate.
         </p>
       </div>
 
-      <div className="bg-surface border border-line rounded-lg overflow-hidden">
-        <header className="px-3 py-2 border-b border-line flex items-center gap-2 bg-canvas/40">
-          <Sparkles size={12} className="text-brand" />
-          <span className="text-xs font-semibold text-fg flex-1">MCP agent instructions</span>
+      <div className="bg-surface border border-line rounded-xl overflow-hidden">
+        <header className="px-4 py-2.5 border-b border-line flex items-center gap-2 bg-canvas">
+          <Sparkles size={14} className="text-brand" />
+          <span className="text-sm font-semibold text-fg flex-1">MCP agent instructions</span>
           <button
             onClick={copy}
-            className="text-xs bg-brand hover:bg-brand-dark text-white px-2.5 py-1 rounded flex items-center gap-1 shadow-pop"
+            className="text-sm bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium"
           >
-            <Clipboard size={11} />
+            <Clipboard size={12} />
             {copied ? 'Đã copy' : 'Copy full prompt'}
           </button>
         </header>
-        <pre className="text-[10px] font-mono text-fg/85 p-3 overflow-x-auto whitespace-pre max-h-[420px]">
+        <pre className="text-xs font-mono text-fg p-3 overflow-x-auto whitespace-pre max-h-[420px] bg-canvas">
           {prompt}
         </pre>
       </div>

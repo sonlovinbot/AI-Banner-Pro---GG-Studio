@@ -27,11 +27,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'menu',        label: 'Dashboard',   icon: <Home size={18} /> },
-  { id: 'banner',      label: 'Banner Tool', icon: <Wand2 size={18} />,        accent: 'text-brand' },
-  { id: 'ugc-studio',  label: 'UGC Studio',  icon: <UserSquare2 size={18} />,  accent: 'text-cyan-500' },
-  { id: 'brand-style', label: 'Brand Style', icon: <Palette size={18} />,      accent: 'text-pink-500' },
-  { id: 'history',     label: 'History',     icon: <Clock size={18} />,        accent: 'text-emerald-500' },
-  { id: 'ads-manager', label: 'Ads Manager', icon: <Megaphone size={18} />,    accent: 'text-amber-500' },
+  { id: 'banner',      label: 'Banner Tool', icon: <Wand2 size={18} /> },
+  { id: 'ugc-studio',  label: 'UGC Studio',  icon: <UserSquare2 size={18} /> },
+  { id: 'brand-style', label: 'Brand Style', icon: <Palette size={18} /> },
+  { id: 'history',     label: 'History',     icon: <Clock size={18} /> },
+  { id: 'ads-manager', label: 'Ads Manager', icon: <Megaphone size={18} /> },
 ];
 
 const PAGE_TITLE: Record<AppPage, string> = {
@@ -70,7 +70,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
       {/* Brand */}
       <div className="px-5 py-5 flex items-center justify-between border-b border-line">
         <button onClick={() => onNavigate('menu')} className="flex items-center gap-3 text-left">
-          <div className="bg-brand text-white p-2 rounded-md border-2 border-fg/10 shadow-pop">
+          <div className="bg-brand text-white p-2 rounded-lg">
             <Wand2 size={18} />
           </div>
           <div>
@@ -95,80 +95,68 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
               key={item.id}
               onClick={() => onNavigate(item.id)}
               className={`
-                w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all
+                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                 ${active
-                  ? 'bg-brand/10 text-brand border-l-2 border-brand'
-                  : 'text-muted hover:text-fg hover:bg-raised border-l-2 border-transparent'
+                  ? 'bg-brand text-white'
+                  : 'text-muted hover:text-fg hover:bg-raised'
                 }
               `}
             >
-              <span className={active ? 'text-brand' : item.accent || ''}>{item.icon}</span>
+              <span>{item.icon}</span>
               <span>{item.label}</span>
-              {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-brand" />}
             </button>
           );
         })}
-
-        {/* API Settings sidebar entry hidden — access via profile box → API Keys tab */}
-        {false && (
-          <button
-            onClick={() => setSettingsModal({ tab: 'keys' })}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted hover:text-fg hover:bg-raised border-l-2 border-transparent transition-all"
-          >
-            <Key size={18} className="text-orange-400" />
-            <span>API Settings</span>
-          </button>
-        )}
       </nav>
 
       {/* Footer */}
       <div className="px-3 pb-4 pt-3 border-t border-line space-y-2">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-raised text-[11px] text-muted">
-          <Zap size={12} className={backend === 'coachio' ? 'text-brand' : 'text-accent-blue'} />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-raised text-xs text-muted">
+          <Zap size={12} className="text-brand" />
           <span>Active:</span>
           <span className="font-semibold text-fg">{backend === 'coachio' ? 'Coachio' : 'Gemini'}</span>
         </div>
         <button
           onClick={handleThemeToggle}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm text-muted hover:text-fg hover:bg-raised transition-colors"
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-muted hover:text-fg hover:bg-raised transition-colors"
           title="Đổi giao diện sáng/tối"
         >
           <span className="flex items-center gap-2">
             {theme === 'dark' ? <Moon size={15} /> : <Sun size={15} />}
             <span>{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
           </span>
-          <span className="text-[10px] text-subtle">⌘+L</span>
+          <span className="text-xs text-subtle">⌘+L</span>
         </button>
 
         {user && (
           <div className="border-t border-line pt-2 mt-2">
             <button
               onClick={() => setSettingsModal({ tab: 'profile' })}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-raised transition-colors text-left"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-raised transition-colors text-left"
               title="Mở Hồ sơ & Cài đặt"
             >
               {(user.user_metadata?.avatar_url as string) ? (
                 <img
                   src={user.user_metadata.avatar_url as string}
                   alt=""
-                  className="w-7 h-7 rounded-full object-cover border border-line"
+                  className="w-8 h-8 rounded-full object-cover border border-line"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-brand/15 text-brand flex items-center justify-center text-xs font-bold">
+                <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
                   {(user.user_metadata?.display_name || user.email || '?').slice(0, 1).toUpperCase()}
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-medium text-fg truncate">
+                <p className="text-sm font-medium text-fg truncate">
                   {user.user_metadata?.display_name || user.email?.split('@')[0]}
                 </p>
-                <p className="text-[10px] text-subtle truncate">{user.email}</p>
+                <p className="text-xs text-subtle truncate">{user.email}</p>
               </div>
-              <Edit3 size={12} className="text-muted shrink-0" />
+              <Edit3 size={14} className="text-muted shrink-0" />
             </button>
             <button
               onClick={async () => { try { await signOut(); } catch (e) { console.warn(e); } }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted hover:text-red-400 hover:bg-red-500/5 transition-colors mt-1"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted hover:text-danger hover:bg-danger-soft transition-colors mt-1"
               title="Đăng xuất"
             >
               <LogOut size={15} />

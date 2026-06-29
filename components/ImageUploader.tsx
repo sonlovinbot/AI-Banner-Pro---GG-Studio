@@ -74,7 +74,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       <div className={`grid gap-2 ${libraryEnabled ? 'grid-cols-3' : 'grid-cols-2'}`}>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center justify-center gap-1.5 text-xs py-2 px-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
+          className="flex items-center justify-center gap-1.5 text-xs py-2 px-2 rounded-md bg-brand hover:bg-brand-dark text-white font-medium transition-colors"
           title="Upload one or more images"
         >
           <Upload size={14} /> Tải lên
@@ -104,7 +104,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
       <div
         tabIndex={0}
-        className="border-2 border-dashed border-line-strong bg-surface/50 rounded-lg p-3 transition-colors hover:border-indigo-500/50 hover:bg-raised/50 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+        className="border-2 border-dashed border-line-strong bg-surface/50 rounded-lg p-3 transition-colors hover:border-brand/50 hover:bg-raised/50 focus:outline-none focus:border-brand focus:ring-2 focus:ring-indigo-500/20"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onPaste={handlePaste}
@@ -117,7 +117,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                 <img src={img.url} alt="upload" className="w-full h-full object-cover" />
                 <button
                   onClick={() => onRemove(img.id)}
-                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1 right-1 bg-black/70 hover:bg-danger-soft text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <X size={12} />
                 </button>
@@ -164,7 +164,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-line">
               <div className="flex items-center gap-3">
-                <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-md"><FolderOpen size={18} /></div>
+                <div className="bg-canvas text-brand p-2 rounded-md"><FolderOpen size={18} /></div>
                 <div>
                   <h3 className="text-base font-semibold text-fg">Thư viện — {title}</h3>
                   <p className="text-xs text-subtle">Bấm vào ảnh để dùng lại · {library!.length}/30</p>
@@ -190,7 +190,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                   {library!.map(item => (
                     <div
                       key={item.id}
-                      className="relative group aspect-square rounded-lg overflow-hidden bg-canvas border border-line hover:border-indigo-500 transition-colors"
+                      className="relative group aspect-square rounded-lg overflow-hidden bg-canvas border border-line hover:border-brand transition-colors"
                     >
                       <button
                         type="button"
@@ -209,7 +209,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
                           e.stopPropagation();
                           onLibraryDelete!(item.id);
                         }}
-                        className="absolute top-2 right-2 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 bg-black/70 hover:bg-danger-soft text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Remove from library"
                       >
                         <Trash2 size={12} />

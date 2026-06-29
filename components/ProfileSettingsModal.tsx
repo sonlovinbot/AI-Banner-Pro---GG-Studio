@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   X, User as UserIcon, Key, Sparkles, ExternalLink, Eye, EyeOff, CheckCircle,
   Loader2, Camera, ChevronDown, ChevronRight, Save, Edit3, Megaphone, Plus,
-  Trash2, Star, AlertCircle,
+  Trash2, Star, AlertCircle, HardDrive,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import {
@@ -19,8 +19,11 @@ import {
   listMetaAccountsFromCloud, saveMetaAccountToCloud, deleteMetaAccountFromCloud,
   newMetaAccountDraft, validateMetaAccount, MetaAccountsSetupRequiredError,
 } from '../services/metaAccountsService';
+import {
+  inventoryLocalStorage, clearGroups, formatBytes, StorageReport, StorageGroupId,
+} from '../services/storageCleanupService';
 
-type SettingsTab = 'profile' | 'keys' | 'meta';
+type SettingsTab = 'profile' | 'keys' | 'meta' | 'storage';
 
 interface Props {
   user?: User;
@@ -61,6 +64,7 @@ export const ProfileSettingsModal: React.FC<Props> = ({ user, onClose, initialTa
               { id: 'profile' as const, label: 'Hồ sơ',         icon: <UserIcon size={12} /> },
               { id: 'keys' as const,    label: 'API Keys',      icon: <Key size={12} /> },
               { id: 'meta' as const,    label: 'Meta Accounts', icon: <Megaphone size={12} /> },
+              { id: 'storage' as const, label: 'Lưu trữ',       icon: <HardDrive size={12} /> },
             ] as { id: SettingsTab; label: string; icon: React.ReactNode }[]).map(t => (
               <button
                 key={t.id}
@@ -80,6 +84,7 @@ export const ProfileSettingsModal: React.FC<Props> = ({ user, onClose, initialTa
           {tab === 'profile' && <ProfileSection user={user} />}
           {tab === 'keys'    && <KeysSection />}
           {tab === 'meta'    && <MetaAccountsSection />}
+          {tab === 'storage' && <StorageSection />}
         </div>
       </div>
     </div>
@@ -198,11 +203,11 @@ const ProfileSection: React.FC<{ user?: User }> = ({ user }) => {
           readOnly
           className="w-full bg-raised border border-line rounded-md px-3 py-2 text-sm text-muted cursor-not-allowed"
         />
-        <p className="text-[10px] text-subtle mt-1">Email được Supabase quản lý, không sửa trực tiếp ở đây.</p>
+        <p className="text-xs text-muted mt-1">Email được Supabase quản lý, không sửa trực tiếp ở đây.</p>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-md">
+        <div className="status-danger border text-sm px-3 py-2 rounded-lg">
           {error}
         </div>
       )}
@@ -211,14 +216,14 @@ const ProfileSection: React.FC<{ user?: User }> = ({ user }) => {
         <button
           onClick={save}
           disabled={!dirty || saving}
-          className="text-xs bg-brand hover:bg-brand-dark disabled:bg-raised disabled:text-subtle text-white px-4 py-2 rounded-md font-medium shadow-pop disabled:shadow-none flex items-center gap-1.5"
+          className="text-sm bg-brand hover:bg-brand-dark disabled:bg-raised disabled:text-subtle text-white px-4 py-2 rounded-lg font-medium flex items-center gap-1.5"
         >
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           Lưu hồ sơ
         </button>
         {savedAt && !dirty && (
-          <span className="text-xs text-emerald-400 flex items-center gap-1">
-            <CheckCircle size={12} /> Đã lưu
+          <span className="text-sm text-success flex items-center gap-1">
+            <CheckCircle size={14} /> Đã lưu
           </span>
         )}
       </div>
@@ -282,24 +287,24 @@ const KeyCard: React.FC<{
   onToggle: () => void;
   children: React.ReactNode;
 }> = ({ accent, title, subtitle, helpUrl, helpLabel, savedBadge, expanded, onToggle, children }) => {
-  const accentBg = accent === 'indigo' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-orange-500/15 text-orange-300 border-orange-500/30';
+  void accent;
   return (
-    <div className="border border-line rounded-lg overflow-hidden bg-surface">
+    <div className="border border-line rounded-xl overflow-hidden bg-surface">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-raised/40 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-raised transition-colors"
       >
-        <div className={`p-1.5 rounded-md border ${accentBg}`}>
+        <div className="p-2 rounded-lg bg-brand text-white">
           <Sparkles size={14} />
         </div>
         <div className="flex-1 min-w-0 text-left">
           <p className="text-sm font-semibold text-fg flex items-center gap-2">
             {title}
-            {savedBadge && <span className="text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded">đã lưu</span>}
+            {savedBadge && <span className="text-xs status-success border px-2 py-0.5 rounded-md font-medium">đã lưu</span>}
           </p>
-          <p className="text-[11px] text-subtle">{subtitle}</p>
+          <p className="text-sm text-muted">{subtitle}</p>
         </div>
-        {expanded ? <ChevronDown size={14} className="text-muted" /> : <ChevronRight size={14} className="text-muted" />}
+        {expanded ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted" />}
       </button>
       {expanded && (
         <div className="border-t border-line p-4 space-y-3">
@@ -343,31 +348,31 @@ const GeminiForm: React.FC<{ onSaved: () => void }> = ({ onSaved }) => {
           value={key}
           onChange={(e) => setKey(e.target.value)}
           placeholder="AIzaSy..."
-          className="w-full bg-canvas border border-line rounded-md px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:border-indigo-500"
+          className="w-full bg-canvas border border-line rounded-lg px-3 py-2.5 pr-10 text-sm font-mono focus:outline-none focus:border-brand"
         />
         <button
           onClick={() => setShow(!show)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-subtle hover:text-fg"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-fg"
         >
-          {show ? <EyeOff size={14} /> : <Eye size={14} />}
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
       {key && (
-        <p className="text-[10px] font-mono text-subtle">Hiện tại: {maskKey(key)}</p>
+        <p className="text-xs font-mono text-muted">Hiện tại: {maskKey(key)}</p>
       )}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={save}
           disabled={!key.trim() || savedFlash}
-          className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-md flex items-center gap-1"
+          className="text-sm bg-brand hover:bg-brand-dark disabled:opacity-50 text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
         >
-          {savedFlash ? <CheckCircle size={12} /> : <Save size={12} />}
+          {savedFlash ? <CheckCircle size={14} /> : <Save size={14} />}
           {savedFlash ? 'Đã lưu' : 'Lưu key'}
         </button>
         {key && (
           <button
             onClick={remove}
-            className="text-xs text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-md border border-red-500/20"
+            className="text-sm text-danger hover:bg-danger-soft px-3 py-2 rounded-lg border border-line"
           >
             Xoá
           </button>
@@ -411,49 +416,49 @@ const CoachioForm: React.FC<{ onSaved: () => void }> = ({ onSaved }) => {
           value={key}
           onChange={(e) => { setKey(e.target.value); setStatus('idle'); }}
           placeholder="lv_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-          className="w-full bg-canvas border border-line rounded-md px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:border-orange-500"
+          className="w-full bg-canvas border border-line rounded-lg px-3 py-2.5 pr-10 text-sm font-mono focus:outline-none focus:border-brand"
         />
         <button
           onClick={() => setShow(!show)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-subtle hover:text-fg"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-fg"
         >
-          {show ? <EyeOff size={14} /> : <Eye size={14} />}
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
       {key && (
-        <p className="text-[10px] font-mono text-subtle">Hiện tại: {maskKey(key)}</p>
+        <p className="text-xs font-mono text-muted">Hiện tại: {maskKey(key)}</p>
       )}
       {status !== 'idle' && (
-        <div className={`text-xs flex items-center gap-1.5 px-2 py-1.5 rounded border ${
-          status === 'validating' ? 'bg-blue-500/10 border-blue-500/30 text-blue-300' :
-          status === 'valid' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
-          'bg-red-500/10 border-red-500/30 text-red-300'
+        <div className={`text-sm flex items-center gap-1.5 px-3 py-2 rounded-lg border ${
+          status === 'validating' ? 'status-info' :
+          status === 'valid'      ? 'status-success' :
+                                    'status-danger'
         }`}>
-          {status === 'validating' && <><Loader2 size={12} className="animate-spin" /> Đang validate...</>}
-          {status === 'valid' && <><CheckCircle size={12} /> Key hợp lệ</>}
-          {status === 'invalid' && <><X size={12} /> Key sai hoặc hết credit</>}
+          {status === 'validating' && <><Loader2 size={14} className="animate-spin" /> Đang validate...</>}
+          {status === 'valid' && <><CheckCircle size={14} /> Key hợp lệ</>}
+          {status === 'invalid' && <><X size={14} /> Key sai hoặc hết credit</>}
         </div>
       )}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={save}
           disabled={!key.trim() || savedFlash}
-          className="text-xs bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-md flex items-center gap-1"
+          className="text-sm bg-brand hover:bg-brand-dark disabled:opacity-50 text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
         >
-          {savedFlash ? <CheckCircle size={12} /> : <Save size={12} />}
+          {savedFlash ? <CheckCircle size={14} /> : <Save size={14} />}
           {savedFlash ? 'Đã lưu' : 'Lưu key'}
         </button>
         <button
           onClick={validate}
           disabled={!key.trim() || status === 'validating'}
-          className="text-xs bg-raised hover:bg-raised-2 text-fg px-3 py-1.5 rounded-md border border-line disabled:opacity-50"
+          className="text-sm bg-canvas hover:bg-raised text-fg px-3 py-2 rounded-lg border border-line-strong disabled:opacity-50 font-medium"
         >
           Test key
         </button>
         {key && (
           <button
             onClick={remove}
-            className="text-xs text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-md border border-red-500/20"
+            className="text-sm text-danger hover:bg-danger-soft px-3 py-2 rounded-lg border border-line"
           >
             Xoá
           </button>
@@ -508,14 +513,14 @@ const MetaAccountsSection: React.FC = () => {
 
   if (setupNeeded) {
     return (
-      <div className="bg-amber-500/5 border-2 border-amber-500/30 rounded-lg p-4">
+      <div className="status-warning border rounded-xl p-4">
         <div className="flex items-center gap-2 mb-2">
-          <AlertCircle size={14} className="text-amber-300" />
-          <p className="text-sm font-semibold text-fg">Cần chạy SQL setup trước</p>
+          <AlertCircle size={16} />
+          <p className="text-base font-semibold text-fg">Cần chạy SQL setup trước</p>
         </div>
-        <p className="text-[11px] text-muted">
-          Bảng <code className="text-amber-300">meta_accounts</code> chưa tồn tại.
-          Vào tab <b className="text-fg">Campaigns</b> (Ads Manager) — modal Setup sẽ hiện SQL đầy đủ.
+        <p className="text-sm">
+          Bảng <code className="bg-canvas text-fg px-1.5 py-0.5 rounded font-mono">meta_accounts</code> chưa tồn tại.
+          File SQL đầy đủ ở <code className="bg-canvas text-fg px-1.5 py-0.5 rounded font-mono">db/setup.sql</code>.
         </p>
       </div>
     );
@@ -523,67 +528,67 @@ const MetaAccountsSection: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-subtle leading-relaxed">
+      <p className="text-sm text-muted leading-relaxed">
         Cấu hình một lần — Ad Account + Page (+ Instagram). Mọi campaign sau chỉ pick từ list này.
         Đặt 1 cái làm default — wizard tự chọn.
       </p>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded">
+        <div className="status-danger border text-sm px-3 py-2 rounded-lg">
           {error}
         </div>
       )}
 
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {accounts.map(a => (
-          <div key={a.id} className="bg-surface border border-line rounded-md p-3 flex items-start gap-3">
-            <div className="bg-brand/15 text-brand p-1.5 rounded border border-brand/30 shrink-0">
-              <Megaphone size={14} />
+          <div key={a.id} className="bg-surface border border-line rounded-xl p-3 flex items-start gap-3">
+            <div className="bg-brand text-white p-2 rounded-lg shrink-0">
+              <Megaphone size={16} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <p className="text-sm font-semibold text-fg truncate">{a.label}</p>
                 {a.isDefault && (
-                  <span className="text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                    <Star size={8} /> default
+                  <span className="text-xs status-success border px-2 py-0.5 rounded-md flex items-center gap-1 font-medium">
+                    <Star size={10} /> default
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-x-3 mt-1 text-[10px] font-mono text-subtle">
-                <span><span className="text-muted">act:</span> {a.accountId}</span>
-                <span><span className="text-muted">page:</span> {a.pageId}</span>
+              <div className="grid grid-cols-2 gap-x-3 mt-1 text-xs font-mono text-muted">
+                <span><span className="text-subtle">act:</span> {a.accountId}</span>
+                <span><span className="text-subtle">page:</span> {a.pageId}</span>
                 {a.instagramActorId && (
-                  <span className="col-span-2"><span className="text-muted">ig:</span> {a.instagramActorId}</span>
+                  <span className="col-span-2"><span className="text-subtle">ig:</span> {a.instagramActorId}</span>
                 )}
               </div>
             </div>
             <button
               onClick={() => setEditing(a)}
-              className="text-muted hover:text-fg p-1.5 rounded hover:bg-raised shrink-0"
+              className="text-muted hover:text-fg p-2 rounded-lg hover:bg-raised shrink-0"
               title="Sửa"
             >
-              <Edit3 size={11} />
+              <Edit3 size={14} />
             </button>
             <button
               onClick={() => handleDelete(a)}
-              className="text-muted hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 shrink-0"
+              className="text-muted hover:text-danger p-2 rounded-lg hover:bg-danger-soft shrink-0"
               title="Xoá"
             >
-              <Trash2 size={11} />
+              <Trash2 size={14} />
             </button>
           </div>
         ))}
 
         {accounts.length === 0 && (
-          <p className="text-[11px] text-subtle text-center py-4">Chưa có account nào.</p>
+          <p className="text-sm text-muted text-center py-4">Chưa có account nào.</p>
         )}
       </div>
 
       <button
         onClick={() => setEditing(newMetaAccountDraft())}
-        className="w-full text-xs bg-brand hover:bg-brand-dark text-white py-2 rounded-md font-medium flex items-center justify-center gap-1.5 shadow-pop"
+        className="w-full text-sm bg-brand hover:bg-brand-dark text-white py-2.5 rounded-lg font-medium flex items-center justify-center gap-1.5"
       >
-        <Plus size={12} /> Thêm Meta Account
+        <Plus size={14} /> Thêm Meta Account
       </button>
 
       {editing && (
@@ -697,29 +702,188 @@ const MetaAccountForm: React.FC<{
               onChange={(e) => update('isDefault', e.target.checked)}
             />
             Đặt làm mặc định
-            <span className="text-[10px] text-subtle">(wizard tự pick cái này)</span>
+            <span className="text-xs text-muted">(wizard tự pick cái này)</span>
           </label>
 
           {errors.length > 0 && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded space-y-1">
+            <div className="status-danger border text-sm px-3 py-2 rounded-lg space-y-1">
               {errors.map((e, i) => <p key={i}>• {e}</p>)}
             </div>
           )}
         </div>
 
-        <footer className="px-5 py-3 border-t border-line bg-surface/60 flex justify-end gap-2">
-          <button onClick={onClose} className="text-xs px-3 py-2 rounded-md bg-raised hover:bg-raised-2 text-fg">
+        <footer className="px-6 py-4 border-t border-line bg-surface flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm px-4 py-2 rounded-lg bg-canvas hover:bg-raised text-fg border border-line">
             Huỷ
           </button>
           <button
             onClick={save}
             disabled={saving}
-            className="text-xs px-4 py-2 rounded-md bg-brand hover:bg-brand-dark text-white font-medium shadow-pop disabled:opacity-50 flex items-center gap-1.5"
+            className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-medium disabled:opacity-50 flex items-center gap-1.5"
           >
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             Lưu
           </button>
         </footer>
+      </div>
+    </div>
+  );
+};
+
+// ────────────── Storage cleanup ──────────────
+
+const StorageSection: React.FC = () => {
+  const [report, setReport] = useState<StorageReport | null>(null);
+  const [selected, setSelected] = useState<Set<StorageGroupId>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    const r = await inventoryLocalStorage();
+    setReport(r);
+    // pre-select all safe groups
+    setSelected(new Set(r.groups.filter(g => g.safe).map(g => g.id)));
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const toggle = (id: StorageGroupId) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleClear = async () => {
+    if (!report || selected.size === 0) return;
+    const unsafe = report.groups.filter(g => selected.has(g.id) && !g.safe);
+    if (unsafe.length > 0) {
+      const msg = `Bạn đang xoá nhóm KHÔNG an toàn:\n\n${unsafe.map(g => `• ${g.label}`).join('\n')}\n\nTiếp tục?`;
+      if (!confirm(msg)) return;
+    }
+    setClearing(true);
+    const reclaimed = clearGroups(Array.from(selected), report.items);
+    setFlash(`Đã giải phóng ${formatBytes(reclaimed)}`);
+    setTimeout(() => setFlash(null), 3000);
+    await refresh();
+    setClearing(false);
+  };
+
+  if (loading || !report) {
+    return (
+      <div className="py-12 text-center text-muted">
+        <Loader2 className="animate-spin mx-auto" size={20} />
+      </div>
+    );
+  }
+
+  const usagePct = report.quotaBytes
+    ? Math.min(100, (report.totalBytes / report.quotaBytes) * 100)
+    : null;
+  const usageBarColor =
+    usagePct == null ? 'bg-brand' :
+    usagePct > 80    ? 'bg-danger-fg' :
+    usagePct > 50    ? 'bg-warning-fg' :
+                       'bg-success-fg';
+
+  return (
+    <div className="space-y-4">
+      {/* Usage bar */}
+      <div className="bg-surface border border-line rounded-xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-sm font-semibold text-fg">Dung lượng localStorage</p>
+            <p className="text-xs text-muted">Browser cap ~5-10 MB. Quá quota → setItem throws, app lỗi.</p>
+          </div>
+          <span className="text-base font-mono font-semibold text-fg">{formatBytes(report.totalBytes)}</span>
+        </div>
+        <div className="h-2 bg-raised rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all`}
+            style={{
+              width: `${Math.max(2, usagePct || 0)}%`,
+              background: usagePct == null
+                ? 'var(--brand)'
+                : usagePct > 80 ? 'var(--danger-fg)'
+                : usagePct > 50 ? 'var(--warning-fg)'
+                : 'var(--success-fg)',
+            }}
+          />
+        </div>
+        {report.quotaBytes && (
+          <p className="text-xs text-muted mt-1.5">
+            ~{Math.round(usagePct || 0)}% của {formatBytes(report.quotaBytes)} (storage estimate — limit thực của localStorage thường nhỏ hơn)
+          </p>
+        )}
+      </div>
+
+      {flash && (
+        <div className="status-success border text-sm px-3 py-2 rounded-lg flex items-center gap-2">
+          <CheckCircle size={14} /> {flash}
+        </div>
+      )}
+
+      {/* Group list */}
+      <div className="space-y-2">
+        {report.groups.map(g => {
+          const checked = selected.has(g.id);
+          return (
+            <label
+              key={g.id}
+              className={`flex items-start gap-3 p-3 bg-surface border rounded-xl cursor-pointer hover:bg-raised transition-colors ${
+                checked ? 'border-brand' : 'border-line'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(g.id)}
+                className="mt-0.5 shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-fg">{g.label}</p>
+                  {g.safe ? (
+                    <span className="text-xs status-success border px-2 py-0.5 rounded-md font-medium">an toàn</span>
+                  ) : (
+                    <span className="text-xs status-warning border px-2 py-0.5 rounded-md font-medium">cẩn thận</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mt-1 leading-relaxed">{g.description}</p>
+                <p className="text-xs text-subtle font-mono mt-1">{g.count} item · {formatBytes(g.bytes)}</p>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
+        <p className="text-xs text-muted">
+          {selected.size === 0
+            ? 'Chưa chọn nhóm nào.'
+            : `Đã chọn ${selected.size} nhóm.`}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={refresh}
+            className="text-sm bg-canvas hover:bg-raised text-fg border border-line px-3 py-2 rounded-lg"
+          >
+            Scan lại
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={clearing || selected.size === 0}
+            className="text-sm bg-brand hover:bg-brand-dark disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-1.5"
+          >
+            {clearing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            Dọn dẹp
+          </button>
+        </div>
       </div>
     </div>
   );

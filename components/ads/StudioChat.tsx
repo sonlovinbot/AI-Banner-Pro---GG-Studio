@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, MessageSquare, Settings as SettingsIcon, Send, Image as ImageIcon, Paperclip,
   Trash2, Loader2, Bot, User as UserIcon, X, Sparkles, Wand2, AlertCircle, Edit3,
-  Clipboard, ChevronDown, ChevronUp, Palette,
+  Clipboard, ChevronDown, ChevronUp, Palette, Layers, Target,
 } from 'lucide-react';
 import {
   AdChatSession, AdChatMessage, AdChatContentPart, HistoryItem,
@@ -22,11 +22,22 @@ import { uploadToBunny } from '../../services/bunnyService';
 import { extractImageFiles, readImagesFromClipboard } from '../../services/imageUtils';
 import { BannerPickerModal } from './BannerPickerModal';
 import { BrandPickerModal, buildBrandContext } from './BrandPickerModal';
+import { peekStudioHandoff, consumeStudioHandoff } from '../../services/studioHandoffService';
+import { listBrandProjectsFromCloud } from '../../services/brandProjectService';
 
 interface Props {
   banners: HistoryItem[];
+  /** Pre-loaded campaigns + adsets for the pinned-context picker. */
+  campaigns?: import('../../types').AdCampaign[];
+  adSets?: import('../../types').AdSet[];
   onRefreshBanners?: () => void;
-  onApplySuggestion?: (suggestion: AdCopySuggestion, bannerIds: string[]) => Promise<AdCreative | void>;
+  /** Opens the finalize modal in AdsManagerPage. Receives banner ids + pinned
+   *  Campaign/AdSet defaults from this session. */
+  onApplySuggestion?: (
+    suggestion: AdCopySuggestion,
+    bannerIds: string[],
+    pins?: { pinnedCampaignId?: string; pinnedAdsetId?: string },
+  ) => Promise<AdCreative | void>;
 }
 
 interface UIMessage extends AdChatMessage {
@@ -34,36 +45,62 @@ interface UIMessage extends AdChatMessage {
   streaming?: boolean;
 }
 
+// All localStorage writes below are wrapped in try/catch so a full quota
+// (e.g. user's image cache filled up 5-10MB) doesn't throw an uncaught error
+// at every state change. Storage failures degrade silently to in-memory only.
+const safeSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} };
+const safeRemove = (k: string) => { try { localStorage.removeItem(k); } catch {} };
+const safeGet = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
+
 const TEMP_KEY = 'ad_chat_temperature';
-const getStoredTemp = () => Number(localStorage.getItem(TEMP_KEY)) || 0.7;
-const setStoredTemp = (t: number) => localStorage.setItem(TEMP_KEY, String(t));
+const getStoredTemp = () => Number(safeGet(TEMP_KEY)) || 0.7;
+const setStoredTemp = (t: number) => safeSet(TEMP_KEY, String(t));
 
 const MODEL_KEY_PREFIX = 'ad_chat_model_';
 const getStoredModel = (sessionId: string): string => {
   if (!sessionId) return DEFAULT_MODEL;
-  return localStorage.getItem(MODEL_KEY_PREFIX + sessionId) || DEFAULT_MODEL;
+  return safeGet(MODEL_KEY_PREFIX + sessionId) || DEFAULT_MODEL;
 };
 const setStoredModel = (sessionId: string, model: string) => {
   if (!sessionId) return;
-  if (model) localStorage.setItem(MODEL_KEY_PREFIX + sessionId, model);
-  else localStorage.removeItem(MODEL_KEY_PREFIX + sessionId);
+  if (model) safeSet(MODEL_KEY_PREFIX + sessionId, model);
+  else safeRemove(MODEL_KEY_PREFIX + sessionId);
 };
 
 const BRAND_KEY_PREFIX = 'ad_chat_brand_';
 const getStoredBrand = (sessionId: string): { id: string; ctx: string; name: string } | null => {
   if (!sessionId) return null;
   try {
-    const raw = localStorage.getItem(BRAND_KEY_PREFIX + sessionId);
+    const raw = safeGet(BRAND_KEY_PREFIX + sessionId);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 };
 const setStoredBrand = (sessionId: string, val: { id: string; ctx: string; name: string } | null) => {
   if (!sessionId) return;
-  if (val) localStorage.setItem(BRAND_KEY_PREFIX + sessionId, JSON.stringify(val));
-  else localStorage.removeItem(BRAND_KEY_PREFIX + sessionId);
+  if (val) safeSet(BRAND_KEY_PREFIX + sessionId, JSON.stringify(val));
+  else safeRemove(BRAND_KEY_PREFIX + sessionId);
 };
 
-export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
+// Pinned campaign + adset per session — passed as defaults to the finalize modal.
+const PINS_KEY_PREFIX = 'ad_chat_pins_';
+interface SessionPins { campaignId?: string; adsetId?: string }
+const getStoredPins = (sessionId: string): SessionPins => {
+  if (!sessionId) return {};
+  try {
+    const raw = safeGet(PINS_KEY_PREFIX + sessionId);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+};
+const setStoredPins = (sessionId: string, pins: SessionPins) => {
+  if (!sessionId) return;
+  if (!pins.campaignId && !pins.adsetId) {
+    safeRemove(PINS_KEY_PREFIX + sessionId);
+  } else {
+    safeSet(PINS_KEY_PREFIX + sessionId, JSON.stringify(pins));
+  }
+};
+
+export const StudioChat: React.FC<Props> = ({ banners, campaigns = [], adSets = [], onApplySuggestion }) => {
   const [sessions, setSessions] = useState<AdChatSession[]>([]);
   const [activeId, setActiveId] = useState<string>('');
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -82,11 +119,19 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
   const [showBrandPicker, setShowBrandPicker] = useState(false);
   const [activeBrand, setActiveBrand] = useState<{ id: string; ctx: string; name: string } | null>(null);
 
+  // Pinned destination — propagates as default to finalize modal.
+  const [pins, setPins] = useState<SessionPins>({});
+  const [showPinsPicker, setShowPinsPicker] = useState(false);
+
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
 
   // Model picker state — per session, persisted in localStorage
   const [models, setModels] = useState<CoachioModel[]>([]);
   const [modelId, setModelId] = useState<string>(DEFAULT_MODEL);
+
+  // Handoff: when StudioChat opens from History/Brand/Campaigns it queues
+  // a handoff in localStorage. We consume it once banners + sessions are ready.
+  const [handoffPending, setHandoffPending] = useState(() => !!peekStudioHandoff());
 
   useEffect(() => {
     listCoachioModels().then(setModels).catch(e => console.warn('list models failed', e));
@@ -111,7 +156,9 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
       .then(s => {
         setSessions(s);
         setLoadingSessions(false);
-        if (s.length > 0 && !activeId) setActiveId(s[0].id);
+        // If a handoff is queued we'll create a new session in the handoff
+        // effect below — don't auto-select an old session here.
+        if (!handoffPending && s.length > 0 && !activeId) setActiveId(s[0].id);
       })
       .catch(e => {
         setLoadingSessions(false);
@@ -120,17 +167,74 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
       });
   }, []);
 
+  // ────────── Consume Studio handoff (banners + brand + pins from History/etc)
+  //   Runs once banners and sessions are both loaded so the handoff banner
+  //   list can resolve against banners[].
+  useEffect(() => {
+    if (!handoffPending) return;
+    if (loadingSessions) return;
+    if (banners.length === 0) return;
+
+    const handoff = consumeStudioHandoff();
+    setHandoffPending(false);
+    if (!handoff) return;
+
+    (async () => {
+      try {
+        const title =
+          handoff.source === 'history'   ? 'Brainstorm từ History' :
+          handoff.source === 'campaigns' ? 'Brainstorm cho Ad Set' :
+          handoff.source === 'brand-style' ? 'Brainstorm từ Brand' :
+          'Phiên mới';
+        const newSess = await createChatSession({ title });
+        setSessions(prev => [newSess, ...prev]);
+        setActiveId(newSess.id);
+        setMessages([]);
+        setToolsCollapsed(false);
+
+        if (handoff.bannerIds?.length) {
+          const items = handoff.bannerIds
+            .map(id => banners.find(b => b.id === id))
+            .filter(Boolean) as HistoryItem[];
+          setPendingBanners(items);
+        }
+
+        if (handoff.brandId) {
+          try {
+            const projects = await listBrandProjectsFromCloud();
+            const p = projects.find(x => x.id === handoff.brandId);
+            if (p) {
+              const val = { id: p.id, ctx: buildBrandContext(p), name: p.name };
+              setActiveBrand(val);
+              setStoredBrand(newSess.id, val);
+            }
+          } catch (e) {
+            console.warn('handoff brand resolve failed', e);
+          }
+        }
+
+        if (handoff.campaignId || handoff.adsetId) {
+          const p: SessionPins = { campaignId: handoff.campaignId, adsetId: handoff.adsetId };
+          setPins(p);
+          setStoredPins(newSess.id, p);
+        }
+      } catch (e: any) {
+        console.warn('handoff apply failed', e);
+        setError(e?.message || 'Apply handoff lỗi');
+      }
+    })();
+  }, [handoffPending, loadingSessions, banners]);
+
   // ────────── Load messages when active session changes
   useEffect(() => {
-    if (!activeId) { setMessages([]); setActiveBrand(null); setModelId(DEFAULT_MODEL); return; }
+    if (!activeId) { setMessages([]); setActiveBrand(null); setModelId(DEFAULT_MODEL); setPins({}); return; }
     listChatMessages(activeId).then(loaded => {
       setMessages(loaded);
-      // Auto-collapse tools once the session has any messages — keeps the
-      // composer focused after the conversation has started.
       setToolsCollapsed(loaded.length > 0);
     });
     setActiveBrand(getStoredBrand(activeId));
     setModelId(getStoredModel(activeId));
+    setPins(getStoredPins(activeId));
   }, [activeId]);
 
   // ────────── Auto-scroll to bottom
@@ -148,10 +252,16 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
       setPendingBanners([]);
       setPendingUploadUrls([]);
       setActiveBrand(null);
+      setPins({});
       setToolsCollapsed(false);
     } catch (e: any) {
       setError(e?.message || 'Tạo phiên mới lỗi');
     }
+  };
+
+  const updatePins = (next: SessionPins) => {
+    setPins(next);
+    setStoredPins(activeId, next);
   };
 
   const handleDeleteSession = async (id: string) => {
@@ -378,7 +488,7 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
                           <span className="text-xs truncate flex-1">{s.title || 'Untitled'}</span>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
-                            className="opacity-0 group-hover:opacity-100 hover:text-red-400 shrink-0"
+                            className="opacity-0 group-hover:opacity-100 hover:text-danger shrink-0"
                           >
                             <Trash2 size={11} />
                           </button>
@@ -444,7 +554,9 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
                   message={m}
                   contextBannerIds={runningBannerIds}
                   banners={banners}
-                  onApplySuggestion={onApplySuggestion}
+                  onApplySuggestion={onApplySuggestion
+                    ? (s, bIds) => onApplySuggestion(s, bIds, pins)
+                    : undefined}
                 />
               );
             });
@@ -453,7 +565,7 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
 
         {/* Error toast inline */}
         {error && (
-          <div className="mx-4 mb-2 px-3 py-2 rounded-md bg-red-500/15 border border-red-500/40 text-red-200 text-xs flex items-center gap-2">
+          <div className="mx-4 mb-2 px-3 py-2 rounded-lg status-danger border text-sm flex items-center gap-2">
             <AlertCircle size={14} />
             <span className="flex-1">{error}</span>
             <button onClick={() => setError(null)} className="opacity-70 hover:opacity-100">
@@ -471,7 +583,7 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
                 <img src={proxiedBannerUrl(b.imageUrl)} alt="" className="w-12 h-12 object-cover rounded border border-line" />
                 <button
                   onClick={() => setPendingBanners(prev => prev.filter(x => x.id !== b.id))}
-                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"
+                  className="absolute -top-1 -right-1 bg-danger-fg text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100" style={{ background: 'var(--danger-fg)' }}
                 >
                   <X size={10} />
                 </button>
@@ -482,7 +594,7 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
                 <img src={url} alt="" className="w-12 h-12 object-cover rounded border border-line" />
                 <button
                   onClick={() => setPendingUploadUrls(prev => prev.filter(x => x !== url))}
-                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"
+                  className="absolute -top-1 -right-1 bg-danger-fg text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100" style={{ background: 'var(--danger-fg)' }}
                 >
                   <X size={10} />
                 </button>
@@ -493,9 +605,9 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
 
         {/* Active brand pill — always visible if user attached a brand */}
         {activeBrand && (
-          <div className="px-4 py-1.5 border-t border-line bg-pink-500/5 flex items-center gap-2 text-xs">
-            <Palette size={12} className="text-pink-400" />
-            <span className="text-pink-200">Brand đang nạp:</span>
+          <div className="px-4 py-1.5 border-t border-line flex items-center gap-2 text-sm" style={{ background: 'var(--brand-soft)' }}>
+            <Palette size={14} className="text-brand" />
+            <span className="font-medium" style={{ color: 'var(--brand-text)' }}>Brand:</span>
             <span className="text-fg font-medium truncate">{activeBrand.name}</span>
             <button
               onClick={() => { setActiveBrand(null); setStoredBrand(activeId, null); }}
@@ -506,6 +618,48 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
             </button>
           </div>
         )}
+
+        {/* Pinned destination (Campaign + AdSet) — passed as default to Tạo Creative */}
+        <div className="px-4 py-1.5 border-t border-line bg-surface flex items-center gap-2 text-sm">
+          <Layers size={14} className="text-muted" />
+          <span className="text-muted shrink-0">Đích đến:</span>
+          {pins.campaignId || pins.adsetId ? (
+            <>
+              {pins.campaignId && (
+                <span className="bg-canvas text-fg border border-line px-2 py-0.5 rounded-md text-xs font-medium truncate max-w-[200px]">
+                  {campaigns.find(c => c.id === pins.campaignId)?.name || '? campaign'}
+                </span>
+              )}
+              {pins.adsetId && (
+                <span className="bg-canvas text-fg border border-line px-2 py-0.5 rounded-md text-xs font-medium truncate max-w-[180px] flex items-center gap-1">
+                  <Target size={11} /> {adSets.find(a => a.id === pins.adsetId)?.name || '? adset'}
+                </span>
+              )}
+              <button
+                onClick={() => setShowPinsPicker(true)}
+                className="ml-auto text-muted hover:text-fg text-xs px-2 py-0.5 rounded hover:bg-raised"
+                title="Đổi"
+              >
+                Đổi
+              </button>
+              <button
+                onClick={() => updatePins({})}
+                className="text-muted hover:text-fg p-0.5 rounded"
+                title="Bỏ pin"
+              >
+                <X size={11} />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setShowPinsPicker(true)}
+              className="text-muted hover:text-fg text-xs px-2 py-0.5 rounded hover:bg-raised"
+              title="Pin campaign/adset để Tạo Creative tự điền"
+            >
+              + Chọn Campaign / Ad Set
+            </button>
+          )}
+        </div>
 
         {/* Collapsible tools row */}
         {toolsCollapsed ? (
@@ -547,14 +701,14 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
               </button>
               <button
                 onClick={() => setShowBrandPicker(true)}
-                className={`text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border ${
+                className={`text-sm flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
                   activeBrand
-                    ? 'bg-pink-500/15 text-pink-200 border-pink-500/40'
-                    : 'bg-raised hover:bg-raised-2 text-fg border-line'
+                    ? 'bg-canvas text-brand border-brand/40'
+                    : 'bg-canvas hover:bg-raised text-fg border-line-strong'
                 }`}
                 title="Nạp Brand info + product + style vào ngữ cảnh chat"
               >
-                <Palette size={12} /> Brand{activeBrand ? ` · ${activeBrand.name.slice(0, 16)}` : ''}
+                <Palette size={14} /> Brand{activeBrand ? ` · ${activeBrand.name.slice(0, 16)}` : ''}
               </button>
               {uploadingFile && <Loader2 size={12} className="animate-spin text-muted ml-1" />}
 
@@ -611,6 +765,17 @@ export const StudioChat: React.FC<Props> = ({ banners, onApplySuggestion }) => {
             if (activeId) setStoredBrand(activeId, val);
             setShowBrandPicker(false);
           }}
+        />
+      )}
+
+      {/* Pins picker modal */}
+      {showPinsPicker && (
+        <PinsPickerModal
+          campaigns={campaigns}
+          adSets={adSets}
+          current={pins}
+          onClose={() => setShowPinsPicker(false)}
+          onConfirm={(p) => { updatePins(p); setShowPinsPicker(false); }}
         />
       )}
 
@@ -678,14 +843,14 @@ const ChatSetupGuide: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto py-10 px-4">
-      <div className="bg-amber-500/5 border-2 border-amber-500/30 rounded-xl p-6">
+      <div className="bg-surface border border-line rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="bg-amber-500/20 text-amber-300 p-2.5 rounded-md border border-amber-500/40">
-            <AlertCircle size={18} />
+          <div className="status-warning border p-2.5 rounded-lg">
+            <AlertCircle size={20} />
           </div>
           <div>
             <h2 className="text-base font-bold text-fg">Cần chạy SQL trước</h2>
-            <p className="text-xs text-muted">Studio Chat dùng 2 table mới: <code className="text-amber-300">ad_chat_sessions</code> + <code className="text-amber-300">ad_chat_messages</code>.</p>
+            <p className="text-sm text-muted">File SQL ở <code className="bg-canvas text-fg px-1.5 py-0.5 rounded font-mono">db/setup.sql</code>. Studio Chat dùng <code className="bg-canvas text-fg px-1 rounded font-mono">ad_chat_sessions</code> + <code className="bg-canvas text-fg px-1 rounded font-mono">ad_chat_messages</code>.</p>
           </div>
         </div>
         <ol className="text-xs text-muted space-y-2 mb-4 list-decimal list-inside">
@@ -829,12 +994,10 @@ const MessageBubble: React.FC<{
 
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-      <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${
-        isUser
-          ? 'bg-brand/10 text-brand border-brand/30'
-          : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+      <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center ${
+        isUser ? 'bg-brand text-white' : 'bg-raised text-fg border border-line'
       }`}>
-        {isUser ? <UserIcon size={14} /> : <Bot size={14} />}
+        {isUser ? <UserIcon size={16} /> : <Bot size={16} />}
       </div>
 
       <div className={`flex-1 max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
@@ -906,28 +1069,28 @@ const CopySuggestCard: React.FC<{
   };
 
   return (
-    <div className="bg-amber-500/5 border-2 border-amber-500/30 rounded-lg p-3 w-full space-y-2">
-      <div className="flex items-center gap-1.5 text-amber-400 text-xs font-semibold">
-        <Sparkles size={12} /> AI đề xuất copy
+    <div className="bg-surface border border-brand/40 rounded-xl p-4 w-full space-y-2.5">
+      <div className="flex items-center gap-1.5 text-brand text-sm font-semibold">
+        <Sparkles size={14} /> AI đề xuất copy
       </div>
 
-      <div className="space-y-2 text-xs">
+      <div className="space-y-2 text-sm">
         {suggestion.primary_text && (
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-subtle text-[10px] uppercase tracking-wider font-mono">
+              <span className="text-muted text-xs uppercase tracking-wider font-mono">
                 Primary text (FB body)
               </span>
-              <span className={`text-[10px] font-mono ${
+              <span className={`text-xs font-mono ${
                 suggestion.primary_text.length > 125
-                  ? 'text-emerald-300'
-                  : 'text-amber-300'
+                  ? 'text-success'
+                  : 'text-warning'
               }`}>
                 {suggestion.primary_text.length} chars
                 {suggestion.primary_text.length > 125 && ' · gấp ở 125'}
               </span>
             </div>
-            <div className="bg-canvas/60 border border-line/60 rounded p-2 text-fg whitespace-pre-wrap leading-relaxed">
+            <div className="bg-canvas border border-line rounded-lg p-3 text-fg whitespace-pre-wrap leading-relaxed">
               {suggestion.primary_text}
             </div>
           </div>
@@ -958,15 +1121,15 @@ const CopySuggestCard: React.FC<{
       <button
         onClick={handle}
         disabled={applying || done}
-        className={`w-full text-xs py-2 rounded-md flex items-center justify-center gap-1.5 font-medium transition-colors ${
+        className={`w-full text-sm py-2.5 rounded-lg flex items-center justify-center gap-1.5 font-medium transition-colors ${
           done
-            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 cursor-default'
-            : 'bg-brand hover:bg-brand-dark text-white shadow-pop'
+            ? 'status-success border cursor-default'
+            : 'bg-brand hover:bg-brand-dark text-white'
         }`}
       >
-        {applying ? <Loader2 size={12} className="animate-spin" />
-          : done ? <>✓ Đã tạo creative</>
-          : <><Wand2 size={12} /> Áp dụng vào Creative mới</>}
+        {applying ? <Loader2 size={14} className="animate-spin" />
+          : done ? <>✓ Đã mở Tạo Creative</>
+          : <><Wand2 size={14} /> Tạo Creative</>}
       </button>
     </div>
   );
@@ -1052,15 +1215,16 @@ const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>((
       {busy ? (
         <button
           onClick={onStop}
-          className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-md flex items-center gap-1 text-xs"
+          className="text-white px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-medium"
+          style={{ background: 'var(--danger-fg)' }}
         >
-          <X size={12} /> Stop
+          <X size={14} /> Stop
         </button>
       ) : (
         <button
           onClick={send}
           disabled={!value.trim()}
-          className="bg-brand hover:bg-brand-dark disabled:bg-raised disabled:text-subtle text-white p-2.5 rounded-md transition-colors shadow-pop disabled:shadow-none"
+          className="bg-brand hover:bg-brand-dark disabled:bg-raised disabled:text-subtle text-white p-2.5 rounded-lg transition-colors"
           title="Gửi (Enter)"
         >
           <Send size={14} />
@@ -1087,16 +1251,16 @@ const ChatSettingsModal: React.FC<{
   const [savingSession, setSavingSession] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-canvas border border-line rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
           <div className="flex items-center gap-3">
-            <div className="bg-amber-500/15 text-amber-300 p-2 rounded-md border border-amber-500/30">
-              <SettingsIcon size={16} />
+            <div className="bg-brand text-white p-2 rounded-lg">
+              <SettingsIcon size={18} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-fg">Chat Settings</h3>
-              <p className="text-[11px] text-subtle">System prompt · Temperature · Coachio LLM</p>
+              <h3 className="text-base font-semibold text-fg">Chat Settings</h3>
+              <p className="text-sm text-muted">System prompt · Temperature · Coachio LLM</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg">
@@ -1265,5 +1429,102 @@ const ModelPicker: React.FC<{
         </optgroup>
       ))}
     </select>
+  );
+};
+
+// ────────────── Pins picker (campaign + adset) ──────────────
+
+const PinsPickerModal: React.FC<{
+  campaigns: import('../../types').AdCampaign[];
+  adSets: import('../../types').AdSet[];
+  current: SessionPins;
+  onClose: () => void;
+  onConfirm: (p: SessionPins) => void;
+}> = ({ campaigns, adSets, current, onClose, onConfirm }) => {
+  const [campaignId, setCampaignId] = useState<string | undefined>(current.campaignId);
+  const [adsetId, setAdsetId] = useState<string | undefined>(current.adsetId);
+
+  const adSetsForCampaign = campaignId
+    ? adSets.filter(a => a.campaignId === campaignId)
+    : [];
+
+  useEffect(() => {
+    if (adsetId && !adSetsForCampaign.find(a => a.id === adsetId)) {
+      setAdsetId(undefined);
+    }
+  }, [campaignId]);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-canvas border border-line rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface">
+          <div className="flex items-center gap-3">
+            <div className="bg-brand text-white p-2 rounded-lg">
+              <Layers size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-fg">Đích đến cho phiên này</h3>
+              <p className="text-sm text-muted">Campaign + Ad Set sẽ tự điền khi Tạo Creative.</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-raised text-muted hover:text-fg">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted block mb-1">Campaign</label>
+            <select
+              value={campaignId || ''}
+              onChange={(e) => setCampaignId(e.target.value || undefined)}
+              className="w-full bg-canvas border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand"
+            >
+              <option value="">— Không pin campaign —</option>
+              {campaigns.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {campaignId && (
+            <div>
+              <label className="text-xs font-medium text-muted block mb-1">Ad Set</label>
+              <select
+                value={adsetId || ''}
+                onChange={(e) => setAdsetId(e.target.value || undefined)}
+                disabled={adSetsForCampaign.length === 0}
+                className="w-full bg-canvas border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand disabled:opacity-50"
+              >
+                <option value="">— {adSetsForCampaign.length === 0 ? 'Campaign này chưa có ad set' : 'Không pin ad set'} —</option>
+                {adSetsForCampaign.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+              {adSetsForCampaign.length === 0 && (
+                <p className="text-xs text-muted mt-1">Tạo Ad Set ở tab Campaigns, hoặc bấm "Mới" trong dialog Tạo Creative.</p>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted leading-relaxed">
+            💡 Khi bấm <b className="text-fg">Tạo Creative</b> từ AI suggest, modal sẽ tự chọn pin này.
+            Vẫn đổi được trong modal.
+          </p>
+        </div>
+
+        <footer className="px-5 py-3 border-t border-line bg-surface flex justify-end gap-2">
+          <button onClick={onClose} className="text-sm px-3 py-2 rounded-lg text-muted hover:text-fg hover:bg-raised">
+            Huỷ
+          </button>
+          <button
+            onClick={() => onConfirm({ campaignId, adsetId })}
+            className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-medium"
+          >
+            Lưu pin
+          </button>
+        </footer>
+      </div>
+    </div>
   );
 };

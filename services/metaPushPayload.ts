@@ -469,7 +469,7 @@ export function buildMcpAgentPrompt(payload: MetaPushPayload): string {
   const lines: string[] = [];
   lines.push('You are pushing an ad campaign to Meta Ads via Pipeboard MCP tools.');
   lines.push(`Account: ${payload.accountId} (Meta API ${payload.apiVersion}).`);
-  lines.push(`Push initial status: PAUSED. Do NOT activate. Report each Meta ID back.`);
+  lines.push(`SAFETY: status MUST be PAUSED for every object (campaign, ad sets, ads). DO NOT activate any of them — the user reviews and activates inside Meta Ads Manager manually. Report each Meta ID back when done.`);
   lines.push('');
   lines.push('## Step 1 — Upload images');
   if (payload.uploads.length === 0) {

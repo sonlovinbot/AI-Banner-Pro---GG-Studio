@@ -353,8 +353,8 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   }, [coachioModel, backend]);
 
   const accent = backend === 'coachio'
-    ? { bg: 'bg-orange-600', border: 'border-orange-500' }
-    : { bg: 'bg-cyan-600', border: 'border-cyan-500' };
+    ? { bg: 'bg-brand', border: 'border-brand' }
+    : { bg: 'bg-brand', border: 'border-brand' };
 
   return (
     <div className="flex h-screen w-full bg-canvas text-fg font-sans">
@@ -368,18 +368,18 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           >
             <ArrowLeft size={20} />
           </button>
-          <div className="bg-cyan-600 p-2 rounded-lg text-white">
+          <div className="bg-brand p-2 rounded-lg text-white">
             <UserSquare2 size={24} />
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-fg tracking-tight">UGC Studio</h1>
-            <p className="text-xs text-cyan-400 font-mono">Face-consistent</p>
+            <p className="text-xs text-info font-mono">Face-consistent</p>
           </div>
           <button
             onClick={() => setShowApiKeySettings(true)}
             className={`p-2 rounded-lg transition-colors ${
               hasCoachioKey
-                ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                ? 'bg-success-fg/10 text-success hover:bg-success-fg/20'
                 : 'bg-raised text-muted hover:bg-raised-2 hover:text-white'
             }`}
             title="API Key Settings"
@@ -399,23 +399,23 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 onClick={() => setBackend('gemini')}
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'gemini'
-                    ? 'bg-cyan-600 border-cyan-500 text-white'
+                    ? 'bg-brand border-brand text-white'
                     : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Gemini Direct
-                {hasGoogleKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full" />}
+                {hasGoogleKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full" />}
               </button>
               <button
                 onClick={() => hasCoachioKey ? setBackend('coachio') : setShowApiKeySettings(true)}
                 className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
                   backend === 'coachio'
-                    ? 'bg-orange-600 border-orange-500 text-white'
+                    ? 'bg-brand border-brand text-white'
                     : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
                 }`}
               >
                 Coachio AI
-                {hasCoachioKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full" />}
+                {hasCoachioKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full" />}
               </button>
             </div>
           </div>
@@ -430,7 +430,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
               {false && (localFaceCount + localFashionCount + localProdCount) > 0 && (
                 <button
                   onClick={migrateLocalLibraries}
-                  className="text-[10px] text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20"
+                  className="text-[10px] text-warning hover:text-warning hover:bg-warning-soft px-2 py-1 rounded border border-warning-fg/40"
                 >
                   Migrate library ({localFaceCount + localFashionCount + localProdCount})
                 </button>
@@ -481,7 +481,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
               {brandProjects.length === 0 ? (
                 <button
                   onClick={() => onNavigate('brand-style')}
-                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-pink-500/50 hover:text-pink-300 text-left transition-colors"
+                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-brand/50 hover:text-brand text-left transition-colors"
                 >
                   + Tạo Brand Style để dùng nhanh
                 </button>
@@ -490,7 +490,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                   <select
                     value={activeBrandId}
                     onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-pink-500"
+                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-brand"
                   >
                     <option value="">— Không dùng brand —</option>
                     {brandProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -519,11 +519,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                         key={m.id}
                         onClick={() => setSelectedModel(m.id)}
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-cyan-600 border-cyan-500 text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
+                          active ? 'bg-brand border-brand text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-cyan-100/80' : 'text-subtle'}`}>{m.id}</div>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>{m.id}</div>
                       </button>
                     );
                   })}
@@ -545,11 +545,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                         key={m.id}
                         onClick={() => setCoachioModel(m.id)}
                         className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-orange-600 border-orange-500 text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
+                          active ? 'bg-brand border-brand text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                         }`}
                       >
                         <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-orange-100/80' : 'text-subtle'}`}>{m.id}</div>
+                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>{m.id}</div>
                       </button>
                     );
                   })}
@@ -628,7 +628,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 value={brandContent}
                 onChange={(e) => setBrandContent(e.target.value)}
                 placeholder="Tên brand, slogan, tone of voice…"
-                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-cyan-500 h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-20 resize-none"
               />
             </div>
 
@@ -638,15 +638,15 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 placeholder="VD: ngồi quán cafe, ánh sáng tự nhiên, đang cầm sản phẩm…"
-                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-cyan-500 h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-20 resize-none"
               />
             </div>
           </div>
 
           {errorMsg && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-md p-3 flex items-start gap-2">
-              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-200">{errorMsg}</p>
+            <div className="bg-danger-soft border border-danger-fg/40 rounded-md p-3 flex items-start gap-2">
+              <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+              <p className="text-xs text-danger">{errorMsg}</p>
             </div>
           )}
         </div>
@@ -678,13 +678,13 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           <h2 className="font-medium text-fg">UGC Workspace</h2>
           <div className="flex items-center gap-4 text-xs text-subtle">
             <span className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`} />
+              <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-warning-fg animate-pulse' : 'bg-success-fg'}`} />
               {isGenerating ? 'Generating' : 'Ready'}
             </span>
             <span className={`px-2 py-0.5 rounded-full border ${
               backend === 'coachio'
-                ? 'bg-orange-500/10 border-orange-500/20 text-orange-400'
-                : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-300'
+                ? 'bg-brand-soft border-brand/20 text-brand'
+                : 'bg-info-soft border-brand/20 text-info'
             }`}>
               {backend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
             </span>

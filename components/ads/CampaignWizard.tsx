@@ -266,7 +266,7 @@ export const CampaignWizard: React.FC<Props> = ({ banners, onClose, onDone }) =>
 
           {step === 'done' && (
             <div className="py-16 text-center space-y-3">
-              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center justify-center">
+              <div className="mx-auto w-14 h-14 rounded-full status-success border flex items-center justify-center">
                 <CheckCircle size={28} />
               </div>
               <p className="text-sm font-semibold text-fg">Đã tạo campaign</p>
@@ -276,7 +276,7 @@ export const CampaignWizard: React.FC<Props> = ({ banners, onClose, onDone }) =>
         </div>
 
         {error && (
-          <div className="mx-5 mb-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
+          <div className="mx-5 mb-3 status-danger border text-sm px-3 py-2 rounded-lg flex items-center gap-2">
             <AlertCircle size={12} /> {error}
           </div>
         )}
@@ -390,7 +390,7 @@ const BriefForm: React.FC<{
         </Field>
         <Field label="Meta Account" hint={metaAccounts.length === 0 ? 'Chưa có Meta Account. Vào Settings → Meta Accounts để thêm.' : 'Account + Page sẽ publish ad'}>
           {metaAccounts.length === 0 ? (
-            <div className="w-full bg-amber-500/5 border border-amber-500/30 rounded-md px-3 py-2 text-[11px] text-amber-200">
+            <div className="w-full status-warning border rounded-lg px-3 py-2 text-sm">
               Chưa có Meta Account
             </div>
           ) : (

@@ -14,6 +14,8 @@ import { StudioChat } from './ads/StudioChat';
 import { BannerPickerModal } from './ads/BannerPickerModal';
 import { QueueTab } from './ads/QueueTab';
 import { CampaignsTab } from './ads/CampaignsTab';
+import { CreativeFinalizeModal } from './ads/CreativeFinalizeModal';
+import { peekStudioHandoff, setStudioHandoff } from '../services/studioHandoffService';
 import {
   listCampaignsFromCloud,
   saveCampaignToCloud,
@@ -28,34 +30,56 @@ import { AdSet } from '../types';
 type AdsTab = 'studio' | 'campaigns' | 'library' | 'queue' | 'analytics';
 
 interface Props {
-  onNavigate: (page: AppPage) => void;
+  onNavigate: (page: AppPage, opts?: { adsTab?: string }) => void;
+  /** Deep-link target tab — used when navigated from History "Brainstorm" etc. */
+  initialTab?: string;
 }
 
 const TAB_DEFS: { id: AdsTab; label: string; icon: React.ReactNode; accent: string }[] = [
   { id: 'studio',    label: 'Studio',    icon: <Wand2 size={14} />,     accent: 'text-brand' },
-  { id: 'campaigns', label: 'Campaigns', icon: <Layers size={14} />,    accent: 'text-fg' },
   { id: 'library',   label: 'Library',   icon: <Layers size={14} />,    accent: 'text-fg' },
+  { id: 'campaigns', label: 'Campaigns', icon: <Layers size={14} />,    accent: 'text-fg' },
   { id: 'queue',     label: 'Queue',     icon: <Send size={14} />,      accent: 'text-fg' },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={14} />, accent: 'text-fg' },
 ];
 
+// Status pill colors — semantic tokens only.
 const STATUS_PALETTE: Record<AdCreativeStatus, string> = {
-  draft:    'bg-gray-500/15 text-muted border-line',
-  ready:    'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-  pushing:  'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-  pushed:   'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  paused:   'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  failed:   'bg-red-500/15 text-red-300 border-red-500/30',
-  archived: 'bg-gray-500/15 text-subtle border-line',
+  draft:    'bg-raised text-muted border-line',
+  ready:    'status-success border',
+  pushing:  'status-info border',
+  pushed:   'status-info border',
+  paused:   'status-warning border',
+  failed:   'status-danger border',
+  archived: 'bg-raised text-subtle border-line',
 };
 
-export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
-  const [tab, setTab] = useState<AdsTab>('library');
+export const AdsManagerPage: React.FC<Props> = ({ onNavigate, initialTab }) => {
+  // initialTab from App.tsx is the deterministic source of truth (set when
+  // navigation triggered with adsTab opts). Fallback to peekStudioHandoff for
+  // older paths. Default: library.
+  const resolveInitialTab = (): AdsTab => {
+    if (initialTab && ['studio', 'library', 'campaigns', 'queue', 'analytics'].includes(initialTab)) {
+      return initialTab as AdsTab;
+    }
+    if (peekStudioHandoff()) return 'studio';
+    return 'library';
+  };
+  const [tab, setTab] = useState<AdsTab>(resolveInitialTab);
   const [creatives, setCreatives] = useState<AdCreative[]>([]);
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+  const [adSets, setAdSets] = useState<AdSet[]>([]);
   const [banners, setBanners] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<AdCreative | null>(null);
+
+  // Finalize modal — opens when StudioChat user clicks "Tạo Creative"
+  const [finalize, setFinalize] = useState<null | {
+    suggestion: Partial<AdCopySuggestion>;
+    bannerIds: string[];
+    pinnedCampaignId?: string;
+    pinnedAdsetId?: string;
+  }>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<AdCreativeStatus | 'all'>('all');
@@ -74,6 +98,13 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
     setCampaigns(ca);
     setBanners(h);
     setLoading(false);
+    // Ad sets fetched separately (may need setup) — failure shouldn't block the page.
+    try {
+      const a = await listAdSetsFromCloud();
+      setAdSets(a);
+    } catch (e) {
+      if (!(e instanceof AdSetSetupRequiredError)) console.warn('adSets load failed', e);
+    }
   };
 
   useEffect(() => { refresh(); }, []);
@@ -121,31 +152,20 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
-  /** Called by StudioChat when user clicks "Apply to Creative" on an AI suggestion.
-   *  Creates a draft creative, switches to Library tab, opens editor for review. */
-  const handleApplySuggestion = async (s: AdCopySuggestion, bannerIds: string[]): Promise<AdCreative> => {
-    const banner = bannerIds[0] ? banners.find(b => b.id === bannerIds[0]) : undefined;
-    const draft: AdCreative = {
-      id: Math.random().toString(36).substring(2, 8) + Date.now().toString(36),
-      bannerId: banner?.id,
-      name: (s.headline || s.primary_text || 'Creative từ chat').slice(0, 80),
-      primaryText: s.primary_text,
-      headline: s.headline,
-      description: s.description,
-      cta: s.cta || 'SHOP_NOW',
-      destinationUrl: s.destination_url,
-      audienceRef: s.audience ? { name: s.audience } : undefined,
-      status: 'draft',
-      tags: s.tags || [],
-      source: 'agent',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    const saved = await saveCreativeToCloud(draft);
-    await refresh();
-    setTab('library');
-    setEditing(saved);
-    return saved;
+  /** Called by StudioChat when user clicks "Tạo Creative" on an AI suggestion.
+   *  Opens the finalize modal so user picks Campaign + AdSet before save —
+   *  no more orphan creatives. */
+  const handleApplySuggestion = async (
+    s: AdCopySuggestion,
+    bannerIds: string[],
+    pins?: { pinnedCampaignId?: string; pinnedAdsetId?: string },
+  ): Promise<void> => {
+    setFinalize({
+      suggestion: s,
+      bannerIds,
+      pinnedCampaignId: pins?.pinnedCampaignId,
+      pinnedAdsetId: pins?.pinnedAdsetId,
+    });
   };
 
   return (
@@ -198,6 +218,8 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
         {tab === 'studio' && (
           <StudioChat
             banners={banners}
+            campaigns={campaigns}
+            adSets={adSets}
             onApplySuggestion={handleApplySuggestion}
             onRefreshBanners={refresh}
           />
@@ -211,6 +233,10 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
             loading={loading}
             onRefresh={refresh}
             onEditCreative={setEditing}
+            onBrainstormForAdSet={(campaignId, adsetId) => {
+              setStudioHandoff({ source: 'campaigns', campaignId, adsetId });
+              setTab('studio');
+            }}
           />
         )}
 
@@ -227,7 +253,7 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
 
         {tab === 'analytics' && (
           <PlaceholderTab
-            icon={<BarChart3 size={48} className="text-emerald-400" />}
+            icon={<BarChart3 size={48} className="text-success" />}
             title="Analytics (Sprint 6)"
             description="CTR / CPC / ROAS đọc từ Meta qua MCP. Winner picker auto chọn top 20% perf."
           />
@@ -247,6 +273,25 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate }) => {
             await saveCampaignToCloud(c);
             await refresh();
             return c;
+          }}
+        />
+      )}
+
+      {finalize && (
+        <CreativeFinalizeModal
+          seed={finalize.suggestion}
+          bannerIds={finalize.bannerIds}
+          campaigns={campaigns}
+          adSets={adSets}
+          banners={banners}
+          pinnedCampaignId={finalize.pinnedCampaignId}
+          pinnedAdsetId={finalize.pinnedAdsetId}
+          onClose={() => setFinalize(null)}
+          onSaved={async (saved) => {
+            await refresh();
+            setFinalize(null);
+            setTab('library');
+            setEditing(saved);
           }}
         />
       )}
@@ -410,22 +455,22 @@ const LibraryTab: React.FC<LibraryTabProps> = ({
 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {c.cta && c.cta !== 'NO_BUTTON' && (
-                      <span className="text-[10px] bg-brand/10 text-brand border border-brand/30 px-1.5 py-0.5 rounded">
+                      <span className="text-xs bg-canvas text-brand border border-brand/40 px-2 py-0.5 rounded-md font-medium">
                         {c.cta}
                       </span>
                     )}
                     {campaign && (
-                      <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                      <span className="text-xs bg-raised text-fg border border-line px-2 py-0.5 rounded-md">
                         {campaign.name}
                       </span>
                     )}
                     {c.importedFromMeta && (
-                      <span className="text-[10px] bg-sky-500/10 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 rounded" title={`Meta ad ${c.originalMetaAdId}`}>
+                      <span className="text-xs status-info border px-2 py-0.5 rounded-md" title={`Meta ad ${c.originalMetaAdId}`}>
                         📥 Meta
                       </span>
                     )}
                     {c.derivedFromCreativeId && (
-                      <span className="text-[10px] bg-purple-500/10 text-purple-300 border border-purple-500/30 px-1.5 py-0.5 rounded" title="Cloned from another creative">
+                      <span className="text-xs bg-raised text-muted border border-line px-2 py-0.5 rounded-md" title="Cloned from another creative">
                         🔀 derived
                       </span>
                     )}
@@ -453,7 +498,7 @@ const LibraryTab: React.FC<LibraryTabProps> = ({
                   </button>
                   <button
                     onClick={() => onDelete(c.id)}
-                    className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded flex items-center gap-1 border border-red-500/30"
+                    className="text-xs bg-danger-soft hover:bg-danger-soft text-danger px-3 py-1.5 rounded flex items-center gap-1 border border-danger-fg/40"
                   >
                     <Trash2 size={12} /> Delete
                   </button>
@@ -549,20 +594,20 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-canvas border border-line rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
           <div className="flex items-center gap-3">
-            <div className="bg-amber-500/15 text-amber-300 p-2 rounded-md border border-amber-500/30">
-              <Megaphone size={16} />
+            <div className="bg-brand text-white p-2 rounded-lg">
+              <Megaphone size={18} />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-fg">Edit Ad Creative</h3>
-              <p className="text-[11px] text-subtle">{draft.id.slice(0, 8)} · {draft.source}</p>
+              <h3 className="text-base font-semibold text-fg">Edit Ad Creative</h3>
+              <p className="text-xs text-muted">{draft.id.slice(0, 8)} · {draft.source}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-md hover:bg-raised text-muted hover:text-fg">
-            <X size={16} />
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-raised text-muted hover:text-fg">
+            <X size={18} />
           </button>
         </header>
 
@@ -581,7 +626,7 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
                   </button>
                   <button
                     onClick={() => setDraft(prev => ({ ...prev, bannerId: undefined }))}
-                    className="text-[10px] bg-raised hover:bg-red-500/10 text-muted hover:text-red-400 px-2 py-1 rounded flex items-center gap-1"
+                    className="text-[10px] bg-raised hover:bg-danger-soft text-muted hover:text-danger px-2 py-1 rounded flex items-center gap-1"
                   >
                     <X size={10} /> Bỏ
                   </button>
@@ -620,7 +665,7 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
                   </button>
                 </div>
                 {bannerUploadError && (
-                  <p className="text-[10px] text-red-400 mt-1">{bannerUploadError}</p>
+                  <p className="text-[10px] text-danger mt-1">{bannerUploadError}</p>
                 )}
               </div>
             )}
@@ -665,7 +710,7 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
             return (
               <span className="flex items-center gap-2">
                 <span>Primary text (FB body)</span>
-                <span className={`text-[10px] font-mono ${foldWarning ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className={`text-[10px] font-mono ${foldWarning ? 'text-success' : 'text-warning'}`}>
                   {len}/2200
                 </span>
                 <span className="text-[10px] text-subtle">
@@ -826,7 +871,7 @@ const CreativeEditor: React.FC<EditorProps> = ({ creative, campaigns, banners, o
               {draft.tags.map(t => (
                 <span key={t} className="text-[11px] bg-raised text-muted border border-line px-2 py-0.5 rounded flex items-center gap-1">
                   #{t}
-                  <button onClick={() => update('tags', draft.tags.filter(x => x !== t))} className="hover:text-red-400">
+                  <button onClick={() => update('tags', draft.tags.filter(x => x !== t))} className="hover:text-danger">
                     <X size={10} />
                   </button>
                 </span>

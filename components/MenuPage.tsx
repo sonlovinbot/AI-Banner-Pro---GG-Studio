@@ -39,24 +39,24 @@ const TOOLS: ToolCard[] = [
     title: 'UGC Studio',
     description: 'Face-consistent UGC. Khuôn mặt + fashion + product.',
     icon: <UserSquare2 size={20} />,
-    accent: 'text-cyan-500',
-    bgAccent: 'bg-cyan-500',
+    accent: 'text-fg',
+    bgAccent: 'bg-fg',
   },
   {
     id: 'brand-style',
     title: 'Brand Style',
     description: 'Lưu brand kit: logo, references, JSON prompt cho team.',
     icon: <Palette size={20} />,
-    accent: 'text-pink-500',
-    bgAccent: 'bg-pink-500',
+    accent: 'text-fg',
+    bgAccent: 'bg-fg',
   },
   {
     id: 'history',
     title: 'History',
     description: 'Xem & chỉnh sửa banner đã tạo. Edit prompt + ảnh ref.',
     icon: <Clock size={20} />,
-    accent: 'text-emerald-500',
-    bgAccent: 'bg-emerald-500',
+    accent: 'text-fg',
+    bgAccent: 'bg-fg',
   },
 ];
 
@@ -171,20 +171,20 @@ export const MenuPage: React.FC<MenuPageProps> = ({ onNavigate }) => {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <StatCard label="Banners trong history" value={historyCount} icon={<Clock size={14} />} accent="text-emerald-500" />
-        <StatCard label="Brand projects" value={brandCount} icon={<Palette size={14} />} accent="text-pink-500" />
+        <StatCard label="Banners trong history" value={historyCount} icon={<Clock size={14} />} accent="text-success" />
+        <StatCard label="Brand projects" value={brandCount} icon={<Palette size={14} />} accent="text-fg" />
         <StatCard
           label="Gemini API key"
           value={hasGoogleKey ? 'Configured' : 'Missing'}
           icon={<Box size={14} />}
-          accent={hasGoogleKey ? 'text-emerald-500' : 'text-subtle'}
+          accent={hasGoogleKey ? 'text-success' : 'text-subtle'}
           numeric={false}
         />
         <StatCard
           label="Coachio API key"
           value={hasCoachioKey ? 'Configured' : 'Missing'}
           icon={<Box size={14} />}
-          accent={hasCoachioKey ? 'text-emerald-500' : 'text-subtle'}
+          accent={hasCoachioKey ? 'text-success' : 'text-subtle'}
           numeric={false}
         />
       </div>

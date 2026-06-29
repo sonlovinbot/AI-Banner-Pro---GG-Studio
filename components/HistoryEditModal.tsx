@@ -173,7 +173,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
       >
         <header className="flex items-center justify-between px-5 py-3 border-b border-line bg-surface/60">
           <div className="flex items-center gap-3">
-            <div className="bg-indigo-600/20 text-indigo-300 p-2 rounded-md border border-indigo-500/30">
+            <div className="bg-brand/20 text-brand p-2 rounded-md border border-brand/30">
               <Wand2 size={16} />
             </div>
             <div>
@@ -199,7 +199,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
           <div className="bg-canvas border-r border-line p-5 flex flex-col items-center gap-3 overflow-y-auto">
             <div className="relative w-full max-w-[480px] aspect-square bg-surface rounded-lg overflow-hidden border border-line flex items-center justify-center">
               {isGenerating ? (
-                <div className="flex flex-col items-center gap-2 text-indigo-300 text-sm">
+                <div className="flex flex-col items-center gap-2 text-brand text-sm">
                   <RefreshCw size={28} className="animate-spin" />
                   <span>{progress || 'Generating...'}</span>
                 </div>
@@ -211,12 +211,12 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
               <a
                 href={displayUrl}
                 download={`banner-${(generated ? 'edited' : 'history')}-${item.id}.png`}
-                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md flex items-center gap-1.5"
+                className="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-md flex items-center gap-1.5"
               >
                 <Download size={12} /> Tải về
               </a>
               {generated && (
-                <span className="text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-1 rounded-full">
+                <span className="text-[11px] bg-success-soft text-success border border-success-fg/40 px-2 py-1 rounded-full">
                   Bản chỉnh sửa · {generated.duration.toFixed(1)}s
                 </span>
               )}
@@ -234,14 +234,14 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="VD: đổi nền sang tông tím, headline đỏ to hơn, thêm CTA 'Mua ngay'..."
-                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-indigo-500 h-24 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-24 resize-none"
               />
             </div>
 
             <div
               tabIndex={0}
               onPaste={handlePaste}
-              className="border-2 border-dashed border-line-strong rounded-lg p-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              className="border-2 border-dashed border-line-strong rounded-lg p-3 focus:outline-none focus:border-brand focus:ring-2 focus:ring-indigo-500/20"
               title="Click vùng này rồi Ctrl/Cmd+V để dán ảnh"
             >
               <div className="flex items-center justify-between mb-2 gap-2">
@@ -261,7 +261,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={extras.length >= MAX_EXTRAS}
-                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded bg-brand hover:bg-brand-dark text-white disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Upload size={11} /> Tải lên
                   </button>
@@ -289,7 +289,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                       <img src={ex.url} alt="extra" className="w-full h-full object-cover" />
                       <button
                         onClick={() => setExtras(prev => prev.filter(x => x.id !== ex.id))}
-                        className="absolute top-1 right-1 bg-black/70 hover:bg-red-500/90 text-white rounded-full p-1"
+                        className="absolute top-1 right-1 bg-black/70 hover:bg-danger-soft text-white rounded-full p-1"
                       >
                         <X size={10} />
                       </button>
@@ -311,7 +311,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                     onClick={() => setAspectRatio(r)}
                     className={`text-[11px] py-1.5 rounded-md border transition-all ${
                       aspectRatio === r
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        ? 'bg-brand border-brand text-white'
                         : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                     }`}
                   >
@@ -330,7 +330,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                     onClick={() => setQuality(q)}
                     className={`text-xs py-2 rounded-md border transition-all ${
                       quality === q
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        ? 'bg-brand border-brand text-white'
                         : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
                     }`}
                   >
@@ -341,9 +341,9 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
             </div>
 
             {errorMsg && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-md p-3 flex items-start gap-2">
-                <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-red-200">{errorMsg}</p>
+              <div className="bg-danger-soft border border-danger-fg/40 rounded-md p-3 flex items-start gap-2">
+                <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
+                <p className="text-xs text-danger">{errorMsg}</p>
               </div>
             )}
 

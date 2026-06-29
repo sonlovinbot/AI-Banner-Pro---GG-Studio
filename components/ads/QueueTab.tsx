@@ -18,13 +18,15 @@ interface Props {
 
 type ColumnId = Exclude<AdCreativeStatus, 'archived'>;
 
-const COLUMNS: { id: ColumnId; label: string; sub: string; tint: string }[] = [
-  { id: 'draft',   label: 'Draft',   sub: 'đang soạn',                 tint: 'border-gray-500/30 bg-gray-500/5' },
-  { id: 'ready',   label: 'Ready',   sub: 'sẵn sàng push',             tint: 'border-emerald-500/30 bg-emerald-500/5' },
-  { id: 'pushing', label: 'Pushing', sub: 'agent đang đẩy',            tint: 'border-cyan-500/30 bg-cyan-500/5' },
-  { id: 'pushed',  label: 'Pushed',  sub: 'đang chạy trên Meta',       tint: 'border-sky-500/30 bg-sky-500/5' },
-  { id: 'paused',  label: 'Paused',  sub: 'tạm dừng',                  tint: 'border-amber-500/30 bg-amber-500/5' },
-  { id: 'failed',  label: 'Failed',  sub: 'lỗi push hoặc Meta reject', tint: 'border-red-500/30 bg-red-500/5' },
+// Columns share the same neutral background — only a small status dot in the
+// header conveys the state. Avoids the "6-color Kanban rainbow" pattern.
+const COLUMNS: { id: ColumnId; label: string; sub: string; dotVar: string }[] = [
+  { id: 'draft',   label: 'Draft',   sub: 'đang soạn',                 dotVar: 'var(--fg-subtle)' },
+  { id: 'ready',   label: 'Ready',   sub: 'sẵn sàng push',             dotVar: 'var(--success-fg)' },
+  { id: 'pushing', label: 'Pushing', sub: 'agent đang đẩy',            dotVar: 'var(--info-fg)' },
+  { id: 'pushed',  label: 'Pushed',  sub: 'đang chạy trên Meta',       dotVar: 'var(--success-fg)' },
+  { id: 'paused',  label: 'Paused',  sub: 'tạm dừng',                  dotVar: 'var(--warning-fg)' },
+  { id: 'failed',  label: 'Failed',  sub: 'lỗi push hoặc Meta reject', dotVar: 'var(--danger-fg)' },
 ];
 
 export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loading, onEdit, onRefresh }) => {
@@ -119,7 +121,7 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loadi
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-fg flex items-center gap-2">
-            <Send size={16} className="text-cyan-400" />
+            <Send size={16} className="text-info" />
             Push Queue
           </h2>
           <p className="text-[11px] text-subtle">
@@ -139,7 +141,7 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loadi
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded flex items-center gap-2">
+        <div className="bg-danger-soft border border-danger-fg/40 text-danger text-xs px-3 py-2 rounded flex items-center gap-2">
           <AlertCircle size={12} /> {error}
         </div>
       )}
@@ -153,22 +155,28 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loadi
               onDragOver={(e) => onColumnDragOver(e, col.id)}
               onDragLeave={() => setDragOverCol(prev => prev === col.id ? null : prev)}
               onDrop={(e) => onColumnDrop(e, col.id)}
-              className={`rounded-lg border flex flex-col min-h-[280px] transition-colors ${
-                isHover ? 'border-brand bg-brand/5' : col.tint
+              className={`rounded-xl border flex flex-col min-h-[280px] transition-colors ${
+                isHover ? 'border-brand bg-brand/5' : 'border-line bg-surface'
               }`}
             >
-              <header className="px-3 py-2 border-b border-line/40 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-fg uppercase tracking-wider">{col.label}</p>
-                  <p className="text-[10px] text-subtle">{col.sub}</p>
+              <header className="px-3 py-2.5 border-b border-line flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: col.dotVar }}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-fg truncate">{col.label}</p>
+                    <p className="text-xs text-muted truncate">{col.sub}</p>
+                  </div>
                 </div>
-                <span className="text-[11px] font-mono text-fg bg-canvas/60 border border-line px-1.5 py-0.5 rounded">
+                <span className="text-xs font-mono text-fg bg-canvas border border-line px-2 py-0.5 rounded-md">
                   {grouped[col.id].length}
                 </span>
               </header>
               <div className="flex-1 p-2 space-y-2 overflow-y-auto max-h-[calc(100vh-22rem)]">
                 {grouped[col.id].length === 0 ? (
-                  <p className="text-[10px] text-subtle text-center py-6">
+                  <p className="text-xs text-muted text-center py-6">
                     {isHover ? 'Thả vào đây' : 'Trống'}
                   </p>
                 ) : (
@@ -285,7 +293,7 @@ const CreativeCard: React.FC<{
         <button
           onClick={onDelete}
           disabled={busy}
-          className="text-muted hover:text-red-400 p-1 rounded hover:bg-red-500/10"
+          className="text-muted hover:text-danger p-1 rounded hover:bg-danger-soft"
           title="Xoá"
         >
           <Trash2 size={11} />
@@ -316,32 +324,32 @@ function nextTransitions(s: AdCreativeStatus): {
   switch (s) {
     case 'draft':
       return [
-        { to: 'ready',    label: 'Ready',    color: 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25', icon: <CheckCircle size={9} /> },
+        { to: 'ready',    label: 'Ready',    color: 'bg-success-soft text-success hover:bg-success-soft', icon: <CheckCircle size={9} /> },
         { to: 'archived', label: 'Archive',  color: 'bg-raised text-muted hover:text-fg',                          icon: <Archive size={9} /> },
       ];
     case 'ready':
       return [
-        { to: 'pushed',   label: 'Pushed',   color: 'bg-sky-500/15 text-sky-300 hover:bg-sky-500/25',              icon: <Send size={9} /> },
+        { to: 'pushed',   label: 'Pushed',   color: 'bg-info-soft text-info hover:bg-info-soft',              icon: <Send size={9} /> },
         { to: 'draft',    label: 'Draft',    color: 'bg-raised text-muted hover:text-fg',                          icon: <ArrowRight size={9} className="rotate-180" /> },
       ];
     case 'pushing':
       return [
-        { to: 'pushed',   label: 'Pushed',   color: 'bg-sky-500/15 text-sky-300 hover:bg-sky-500/25',              icon: <CheckCircle size={9} /> },
-        { to: 'failed',   label: 'Failed',   color: 'bg-red-500/15 text-red-300 hover:bg-red-500/25',              icon: <AlertCircle size={9} /> },
+        { to: 'pushed',   label: 'Pushed',   color: 'bg-info-soft text-info hover:bg-info-soft',              icon: <CheckCircle size={9} /> },
+        { to: 'failed',   label: 'Failed',   color: 'bg-danger-soft text-danger hover:bg-danger-fg/25',              icon: <AlertCircle size={9} /> },
       ];
     case 'pushed':
       return [
-        { to: 'paused',   label: 'Pause',    color: 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25',        icon: <PauseCircle size={9} /> },
+        { to: 'paused',   label: 'Pause',    color: 'bg-warning-soft text-warning hover:bg-warning-soft',        icon: <PauseCircle size={9} /> },
         { to: 'archived', label: 'Archive',  color: 'bg-raised text-muted hover:text-fg',                          icon: <Archive size={9} /> },
       ];
     case 'paused':
       return [
-        { to: 'pushed',   label: 'Resume',   color: 'bg-sky-500/15 text-sky-300 hover:bg-sky-500/25',              icon: <PlayCircle size={9} /> },
+        { to: 'pushed',   label: 'Resume',   color: 'bg-info-soft text-info hover:bg-info-soft',              icon: <PlayCircle size={9} /> },
         { to: 'archived', label: 'Archive',  color: 'bg-raised text-muted hover:text-fg',                          icon: <Archive size={9} /> },
       ];
     case 'failed':
       return [
-        { to: 'ready',    label: 'Retry',    color: 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25', icon: <RotateCw size={9} /> },
+        { to: 'ready',    label: 'Retry',    color: 'bg-success-soft text-success hover:bg-success-soft', icon: <RotateCw size={9} /> },
         { to: 'archived', label: 'Archive',  color: 'bg-raised text-muted hover:text-fg',                          icon: <Archive size={9} /> },
       ];
     default:
