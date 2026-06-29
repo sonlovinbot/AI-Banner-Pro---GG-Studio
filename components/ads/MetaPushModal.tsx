@@ -23,11 +23,13 @@ interface Props {
   onRefresh?: () => Promise<void> | void;
   /** Open the Creative Editor for manual fixes — caller closes this modal first. */
   onEditCreative?: (creativeId: string) => void;
+  /** Open the Ad Set Editor (for fixing optimization_goal/pixel/etc). */
+  onEditAdSet?: (adsetId: string) => void;
 }
 
 type PreviewTab = 'validation' | 'payload' | 'agent' | 'result';
 
-export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, banners, metaAccounts, onClose, onPushed, onRefresh, onEditCreative }) => {
+export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, banners, metaAccounts, onClose, onPushed, onRefresh, onEditCreative, onEditAdSet }) => {
   const [tab, setTab] = useState<PreviewTab>('validation');
   const [pushing, setPushing] = useState<'idle' | 'dry' | 'real'>('idle');
   const [pushResult, setPushResult] = useState<PushResult | null>(null);
@@ -85,6 +87,13 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
     if (onEditCreative) {
       onClose();
       onEditCreative(creativeId);
+    }
+  };
+
+  const handleEditAdSetClick = (adsetId: string) => {
+    if (onEditAdSet) {
+      onClose();
+      onEditAdSet(adsetId);
     }
   };
 
@@ -199,6 +208,7 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
               onAutoFixAll={handleAutoFixAll}
               onAutoAssignAdset={handleAutoAssignAdset}
               onEditCreative={handleEditCreativeClick}
+              onEditAdSet={handleEditAdSetClick}
             />
           )}
           {tab === 'payload' && (
@@ -277,7 +287,8 @@ const ValidationView: React.FC<{
   onAutoFixAll: () => void;
   onAutoAssignAdset: (creativeId: string, adsetId: string) => void;
   onEditCreative: (creativeId: string) => void;
-}> = ({ issues, fixingId, autoFixableCount, onAutoFixAll, onAutoAssignAdset, onEditCreative }) => {
+  onEditAdSet: (adsetId: string) => void;
+}> = ({ issues, fixingId, autoFixableCount, onAutoFixAll, onAutoAssignAdset, onEditCreative, onEditAdSet }) => {
   if (issues.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -361,6 +372,15 @@ const ValidationView: React.FC<{
                     title="Mở Editor để sửa"
                   >
                     <Edit3 size={11} /> Sửa
+                  </button>
+                )}
+                {i.fix?.type === 'edit-adset' && (
+                  <button
+                    onClick={() => onEditAdSet((i.fix as any).adsetId)}
+                    className="text-xs bg-canvas hover:bg-raised text-fg border border-line-strong px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0"
+                    title="Mở AdSet Editor để sửa"
+                  >
+                    <Edit3 size={11} /> Sửa AdSet
                   </button>
                 )}
 

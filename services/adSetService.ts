@@ -191,10 +191,11 @@ export function validOptimizationGoals(
     case 'OUTCOME_LEADS':
       return ['LEAD_GENERATION', 'QUALITY_LEAD', 'QUALITY_CALL', 'OFFSITE_CONVERSIONS', 'LINK_CLICKS'];
     case 'OUTCOME_SALES':
-      // OFFSITE_CONVERSIONS + VALUE require a Pixel installed on the destination
-      // URL. LINK_CLICKS / LANDING_PAGE_VIEWS / IMPRESSIONS / REACH work
-      // without a pixel — useful for first push when pixel isn't set up.
-      return ['LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'OFFSITE_CONVERSIONS', 'VALUE', 'IMPRESSIONS', 'REACH'];
+      // Pipeboard docs list LINK_CLICKS / LANDING_PAGE_VIEWS / IMPRESSIONS / REACH
+      // as valid for SALES, but Meta v23 rejects all of them in practice (verified
+      // with create_adset dry-runs in 2026-06). Only OFFSITE_CONVERSIONS and VALUE
+      // succeed, and both REQUIRE a promoted_object with pixel_id + custom_event_type.
+      return ['OFFSITE_CONVERSIONS', 'VALUE'];
     case 'OUTCOME_APP_PROMOTION':
       return ['OFFSITE_CONVERSIONS', 'LINK_CLICKS'];
     default:

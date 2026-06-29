@@ -505,6 +505,10 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
             const cr = creatives.find(c => c.id === creativeId);
             if (cr) onEditCreative(cr);
           }}
+          onEditAdSet={(adsetId) => {
+            const a = adSets.find(x => x.id === adsetId);
+            if (a) setEditingAdSet(a);
+          }}
           onPushed={async () => {
             await Promise.all([onRefresh(), refreshAdSets()]);
           }}

@@ -6,6 +6,7 @@
 // is which transport actually does the POST.
 
 import { AdCampaign, AdSet, AdCreative, HistoryItem, MetaAccount } from '../types';
+import { validOptimizationGoals } from './adSetService';
 
 /** Resolve account/page/IG from MetaAccount table reference, falling back to
  *  the deprecated direct fields on AdCampaign for old rows. */
@@ -108,6 +109,24 @@ export function validateForPush(
     if (!a.name?.trim()) err('adset', a.id, 'name', 'Ad set chưa có tên');
     if (!a.optimizationGoal) err('adset', a.id, 'optimizationGoal', 'Chưa chọn optimization goal');
     if (!a.billingEvent) err('adset', a.id, 'billingEvent', 'Chưa chọn billing event');
+
+    // Check optimization_goal is actually valid for this campaign objective +
+    // destination — Meta will reject otherwise. Pipeboard's docs list more
+    // "valid" combos than Meta actually accepts, so we go by what works in
+    // practice (see adSetService.validOptimizationGoals).
+    if (a.optimizationGoal && campaign.objective) {
+      const allowed = validOptimizationGoals(campaign.objective, a.destinationType);
+      if (allowed.length > 0 && !allowed.includes(a.optimizationGoal)) {
+        issues.push({
+          level: 'error', scope: 'adset', refId: a.id, field: 'optimizationGoal',
+          displayName: a.name,
+          message: `Ad set "${a.name}" — goal ${a.optimizationGoal} KHÔNG hợp lệ với ${campaign.objective}` +
+            (a.destinationType ? ` + destination ${a.destinationType}` : '') +
+            `. Chỉ chấp nhận: ${allowed.join(', ')}.`,
+          fix: { type: 'edit-adset', adsetId: a.id },
+        });
+      }
+    }
     if (!campaign.useCBO && a.dailyBudget == null && a.lifetimeBudget == null) {
       err('adset', a.id, 'budget', 'Campaign không CBO → ad set cần dailyBudget HOẶC lifetimeBudget');
     }
@@ -123,12 +142,20 @@ export function validateForPush(
       (campaign.objective === 'OUTCOME_LEADS' && a.optimizationGoal === 'OFFSITE_CONVERSIONS');
     if (needsPixel) {
       if (!a.promotedPixelId) {
-        err('adset', a.id, 'promotedPixelId',
-          `Ad set "${a.name}" — ${a.optimizationGoal} cần Pixel ID. Vào Edit Ad Set → field Pixel ID.`);
+        issues.push({
+          level: 'error', scope: 'adset', refId: a.id, field: 'promotedPixelId',
+          displayName: a.name,
+          message: `Ad set "${a.name}" — ${a.optimizationGoal} cần Pixel ID. Mở Edit Ad Set → section Conversion tracking.`,
+          fix: { type: 'edit-adset', adsetId: a.id },
+        });
       }
       if (!a.promotedCustomEventType) {
-        err('adset', a.id, 'promotedCustomEventType',
-          `Ad set "${a.name}" — cần Custom Event Type (PURCHASE / LEAD / ADD_TO_CART / ...).`);
+        issues.push({
+          level: 'error', scope: 'adset', refId: a.id, field: 'promotedCustomEventType',
+          displayName: a.name,
+          message: `Ad set "${a.name}" — cần Custom Event Type (PURCHASE / LEAD / ADD_TO_CART / ...).`,
+          fix: { type: 'edit-adset', adsetId: a.id },
+        });
       }
     }
     const t = a.targeting;
