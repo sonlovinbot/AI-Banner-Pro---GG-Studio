@@ -6,7 +6,7 @@
 // is which transport actually does the POST.
 
 import { AdCampaign, AdSet, AdCreative, HistoryItem, MetaAccount } from '../types';
-import { validOptimizationGoals } from './adSetService';
+import { validOptimizationGoals } from './adSetConstants';
 
 /** Resolve account/page/IG from MetaAccount table reference, falling back to
  *  the deprecated direct fields on AdCampaign for old rows. */
