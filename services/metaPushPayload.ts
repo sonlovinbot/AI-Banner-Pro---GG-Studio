@@ -368,7 +368,10 @@ export function buildMetaPayload(
       daily_budget: campaign.useCBO ? campaign.dailyBudget : undefined,
       lifetime_budget: campaign.useCBO ? campaign.lifetimeBudget : undefined,
       spend_cap: campaign.spendCap,
-      special_ad_categories: campaign.specialAdCategories?.length ? campaign.specialAdCategories : ['NONE'],
+      // Meta v23 requires special_ad_categories to be an array (can be empty).
+      // The legacy ['NONE'] value is no longer valid — send [] for "no special
+      // categories apply".
+      special_ad_categories: campaign.specialAdCategories?.length ? campaign.specialAdCategories : [],
       campaign_budget_optimization: campaign.useCBO || undefined,
     }),
   };

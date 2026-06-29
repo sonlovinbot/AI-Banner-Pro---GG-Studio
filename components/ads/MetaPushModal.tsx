@@ -94,6 +94,7 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
     try {
       const result = await pushCampaign(campaign.id, { dryRun });
       setPushResult(result);
+      // Always switch to Result tab — success OR partial failure with steps.
       setTab('result');
       if (!dryRun && result.success && onPushed) {
         await onPushed();

@@ -265,7 +265,7 @@ async function metaUploadImageByUrl(accountId: string, url: string, token: strin
 
 // ────────────── Handler ──────────────
 
-export default async function handler(req: Request): Promise<Response> {
+async function handlerImpl(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204 });
   }
@@ -485,4 +485,22 @@ export default async function handler(req: Request): Promise<Response> {
     errors: failed.map(s => `${s.step} ${s.localId || ''}: ${s.error}`),
   };
   return json(resp);
+}
+
+/** Top-level wrapper: any uncaught exception becomes a structured JSON 500.
+ *  Without this, an unexpected throw would surface as a generic Vercel
+ *  HTML 500 page, which the client can't parse into a useful error. */
+export default async function handler(req: Request): Promise<Response> {
+  try {
+    return await handlerImpl(req);
+  } catch (e: any) {
+    const message = e?.message || String(e) || 'unknown error';
+    const stack = (e?.stack || '').split('\n').slice(0, 3).join(' | ');
+    return json({
+      mode: 'push',
+      success: false,
+      campaignId: '',
+      errors: [`Edge function crash: ${message}`, `stack: ${stack}`],
+    }, 500);
+  }
 }

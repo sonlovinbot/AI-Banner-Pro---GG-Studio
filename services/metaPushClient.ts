@@ -69,6 +69,15 @@ export async function pushCampaign(
   try { data = await res.json(); } catch {
     throw new Error('Server trả JSON malformed');
   }
+  // Edge function returns a structured PushResult even on 4xx/5xx when the
+  // failure happened mid-flow (e.g. one of the 5 Meta API steps rejected).
+  // Detect that shape and return it so the UI can show per-step diagnostics
+  // in the Result tab instead of just a generic "Push failed (500)" toast.
+  const looksLikePushResult =
+    data && typeof data.mode === 'string' && typeof data.success === 'boolean';
+  if (looksLikePushResult) {
+    return data as PushResult;
+  }
   if (!res.ok) {
     throw new Error(data?.error || `Push failed (${res.status})`);
   }
