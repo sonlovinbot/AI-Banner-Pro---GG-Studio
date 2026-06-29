@@ -95,3 +95,44 @@ export async function fetchAllForAccount(accountId: string): Promise<MetaAccount
     fetchedAt: Date.now(),
   };
 }
+
+export interface MetaStatusReport {
+  campaign?: { id: string; status?: string; effectiveStatus?: string };
+  adsets: { id: string; status?: string; effectiveStatus?: string }[];
+  ads: { id: string; status?: string; effectiveStatus?: string }[];
+}
+
+/** Pull live statuses from Meta for the given Meta IDs.
+ *  Caller is responsible for patching local DB rows from the result. */
+export async function syncStatusesFromMeta(args: {
+  accountId: string;
+  metaCampaignId?: string;
+  metaAdsetIds?: string[];
+  metaAdIds?: string[];
+}): Promise<MetaStatusReport> {
+  const { data: { session } } = await getSupabase().auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Chưa đăng nhập');
+  const res = await fetch('/api/meta-fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action: 'sync-statuses', ...args }),
+  });
+  const text = await res.text();
+  let body: any;
+  try { body = JSON.parse(text); } catch {
+    throw new Error(`Server trả response không phải JSON (${res.status}).`);
+  }
+  if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  return body as MetaStatusReport;
+}
+
+/** Map Meta status string → local app status. */
+export function mapMetaStatusToApp(meta: string | undefined): 'active' | 'paused' | 'archived' | undefined {
+  if (!meta) return undefined;
+  const s = meta.toUpperCase();
+  if (s === 'ACTIVE') return 'active';
+  if (s === 'PAUSED') return 'paused';
+  if (s === 'ARCHIVED' || s === 'DELETED') return 'archived';
+  return undefined;
+}

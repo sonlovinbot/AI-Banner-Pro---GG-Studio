@@ -18,7 +18,9 @@ interface Props {
   banners: HistoryItem[];
   metaAccounts: MetaAccount[];
   onClose: () => void;
-  onPushed?: () => Promise<void> | void;
+  /** Fires after push finishes (success or partial fail). Caller surfaces a
+   *  persistent toast so user sees the outcome even after modal closes. */
+  onPushed?: (result: PushResult) => Promise<void> | void;
   /** Refresh source-of-truth data after an auto-fix mutates a creative. */
   onRefresh?: () => Promise<void> | void;
   /** Open the Creative Editor for manual fixes — caller closes this modal first. */
@@ -105,8 +107,10 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
       setPushResult(result);
       // Always switch to Result tab — success OR partial failure with steps.
       setTab('result');
-      if (!dryRun && result.success && onPushed) {
-        await onPushed();
+      // Surface the result upward regardless of success — caller shows a toast
+      // so the user sees what happened even after closing the modal.
+      if (!dryRun && onPushed) {
+        await onPushed(result);
       }
     } catch (e: any) {
       // If Edge function is not deployed (Vite dev mode), fall back to local

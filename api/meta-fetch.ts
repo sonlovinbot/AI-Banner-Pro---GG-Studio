@@ -15,8 +15,12 @@ import { callPipeboardTool, PipeboardError } from './_lib/pipeboardClient';
 export const config = { runtime: 'edge' };
 
 interface FetchRequestBody {
-  action: 'pages' | 'pixels' | 'instagram-accounts';
+  action: 'pages' | 'pixels' | 'instagram-accounts' | 'sync-statuses';
   accountId: string;
+  /** Used by sync-statuses — pull statuses for this campaign's ids. */
+  metaCampaignId?: string;
+  metaAdsetIds?: string[];
+  metaAdIds?: string[];
 }
 
 function json(body: any, status = 200): Response {
@@ -143,6 +147,49 @@ async function handlerImpl(req: Request): Promise<Response> {
           account_id: body.accountId,
         }, pipeboardToken);
         return json({ instagramAccounts: normalizeIgAccounts(out) });
+      }
+      case 'sync-statuses': {
+        // Pull live status from Meta for whatever Meta IDs the FE passed.
+        // Each lookup is independent; we collect partial results — caller
+        // patches Supabase with whatever came back.
+        const out: {
+          campaign?: { id: string; status?: string; effectiveStatus?: string };
+          adsets: { id: string; status?: string; effectiveStatus?: string }[];
+          ads: { id: string; status?: string; effectiveStatus?: string }[];
+        } = { adsets: [], ads: [] };
+
+        const pickStatus = (r: any) => ({
+          status: r?.status || r?.configured_status,
+          effectiveStatus: r?.effective_status,
+        });
+
+        if (body.metaCampaignId) {
+          try {
+            const r: any = await callPipeboardTool('get_campaign_details', {
+              campaign_id: body.metaCampaignId,
+            }, pipeboardToken);
+            out.campaign = { id: body.metaCampaignId, ...pickStatus(r) };
+          } catch (e: any) {
+            out.campaign = { id: body.metaCampaignId, status: 'error:' + (e?.message || '?') };
+          }
+        }
+        for (const id of body.metaAdsetIds || []) {
+          try {
+            const r: any = await callPipeboardTool('get_adset_details', { adset_id: id }, pipeboardToken);
+            out.adsets.push({ id, ...pickStatus(r) });
+          } catch (e: any) {
+            out.adsets.push({ id, status: 'error:' + (e?.message || '?') });
+          }
+        }
+        for (const id of body.metaAdIds || []) {
+          try {
+            const r: any = await callPipeboardTool('get_ad_details', { ad_id: id }, pipeboardToken);
+            out.ads.push({ id, ...pickStatus(r) });
+          } catch (e: any) {
+            out.ads.push({ id, status: 'error:' + (e?.message || '?') });
+          }
+        }
+        return json(out);
       }
       default:
         return bad(`Unknown action: ${body.action}`);

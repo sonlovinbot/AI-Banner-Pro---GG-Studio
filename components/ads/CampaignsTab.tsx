@@ -23,8 +23,9 @@ import {
   validOptimizationGoals, OPTIMIZATION_GOAL_LABELS, BILLING_EVENT_LABELS, DESTINATION_TYPE_LABELS,
 } from '../../services/adSetService';
 import { proxiedBannerUrl } from '../../services/cdnProxy';
-import { Image as ImageIcon } from 'lucide-react';
-import { readMetaCache } from '../../services/metaFetchService';
+import { Image as ImageIcon, CheckCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { readMetaCache, syncStatusesFromMeta, mapMetaStatusToApp } from '../../services/metaFetchService';
+import type { PushResult } from '../../services/metaPushClient';
 
 interface Props {
   campaigns: AdCampaign[];
@@ -66,6 +67,86 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
 
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Persistent push outcome banner — survives MetaPushModal closing so user
+  // can see what actually happened (previous flow showed nothing).
+  const [pushToast, setPushToast] = useState<PushResult | null>(null);
+  // Per-campaign sync-status loading state
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handlePushDone = async (result: PushResult) => {
+    setPushToast(result);
+    await Promise.all([onRefresh(), refreshAdSets()]);
+    // Auto-dismiss success toast after 12s; keep failure toast until user closes.
+    if (result.success) {
+      setTimeout(() => setPushToast(prev => (prev === result ? null : prev)), 12_000);
+    }
+  };
+
+  const handleSyncStatus = async (c: AdCampaign) => {
+    if (!c.metaCampaignId) return;
+    const account = metaAccounts.find(a => a.id === c.metaAccountRefId);
+    const accountId = account?.accountId || c.metaAccountId || '';
+    if (!accountId) { setSyncMsg('Campaign chưa link Meta Account.'); return; }
+
+    const cAdsets = adSets.filter(a => a.campaignId === c.id && a.metaAdSetId);
+    const cCreatives = creatives.filter(cr => cr.campaignId === c.id && cr.metaAdId);
+    setSyncing(c.id);
+    setSyncMsg(null);
+    try {
+      const report = await syncStatusesFromMeta({
+        accountId,
+        metaCampaignId: c.metaCampaignId,
+        metaAdsetIds: cAdsets.map(a => a.metaAdSetId!),
+        metaAdIds: cCreatives.map(cr => cr.metaAdId!),
+      });
+
+      let touched = 0;
+
+      const campaignStatus = mapMetaStatusToApp(report.campaign?.effectiveStatus || report.campaign?.status);
+      if (campaignStatus && campaignStatus !== c.status) {
+        await saveCampaignToCloud({ ...c, status: campaignStatus, updatedAt: Date.now() });
+        touched++;
+      }
+
+      for (const r of report.adsets) {
+        const local = cAdsets.find(a => a.metaAdSetId === r.id);
+        if (!local) continue;
+        const mapped = mapMetaStatusToApp(r.effectiveStatus || r.status);
+        if (mapped && mapped !== local.status) {
+          await saveAdSetToCloud({ ...local, status: mapped, updatedAt: Date.now() });
+          touched++;
+        }
+      }
+
+      for (const r of report.ads) {
+        const local = cCreatives.find(cr => cr.metaAdId === r.id);
+        if (!local) continue;
+        const mapped = mapMetaStatusToApp(r.effectiveStatus || r.status);
+        // AdCreative.status uses an extended enum (pushed/failed/...) so we
+        // only override when Meta says paused/archived — leave `pushed` rows
+        // alone when Meta still reports ACTIVE.
+        if (mapped === 'paused' || mapped === 'archived') {
+          if (mapped !== local.status) {
+            const { saveCreativeToCloud } = await import('../../services/adCreativeService');
+            await saveCreativeToCloud({ ...local, status: mapped as any, updatedAt: Date.now() });
+            touched++;
+          }
+        }
+      }
+
+      await Promise.all([onRefresh(), refreshAdSets()]);
+      setSyncMsg(touched > 0
+        ? `Sync xong — đã cập nhật ${touched} thực thể từ Meta.`
+        : 'Sync xong — không có thay đổi nào (đã đồng bộ).');
+      setTimeout(() => setSyncMsg(null), 6_000);
+    } catch (e: any) {
+      setSyncMsg(`Sync lỗi: ${e?.message || e}`);
+    } finally {
+      setSyncing(null);
+    }
+  };
 
   const refreshAdSets = async () => {
     setAdSetsLoading(true);
@@ -190,6 +271,19 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
 
   return (
     <div className="space-y-3">
+      {pushToast && (
+        <PushOutcomeToast
+          result={pushToast}
+          onDismiss={() => setPushToast(null)}
+        />
+      )}
+      {syncMsg && (
+        <div className={`text-sm px-3 py-2 rounded-lg border ${
+          syncMsg.startsWith('Sync lỗi') ? 'status-danger' : 'status-info'
+        }`}>
+          {syncMsg}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-fg flex items-center gap-2">
@@ -283,6 +377,16 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                     </div>
                   </button>
 
+                  {c.metaCampaignId && (
+                    <button
+                      onClick={() => handleSyncStatus(c)}
+                      disabled={syncing === c.id}
+                      className="text-muted hover:text-brand p-1.5 rounded hover:bg-brand/10 disabled:opacity-50"
+                      title="Pull trạng thái mới nhất từ Meta về"
+                    >
+                      {syncing === c.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    </button>
+                  )}
                   <button
                     onClick={() => setPushPreview(c)}
                     className="text-muted hover:text-brand p-1.5 rounded hover:bg-brand/10"
@@ -511,9 +615,7 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
             const a = adSets.find(x => x.id === adsetId);
             if (a) setEditingAdSet(a);
           }}
-          onPushed={async () => {
-            await Promise.all([onRefresh(), refreshAdSets()]);
-          }}
+          onPushed={handlePushDone}
         />
       )}
     </div>
@@ -586,14 +688,15 @@ const ThumbStack: React.FC<{ items: HistoryItem[]; size?: number; fallbackIcon?:
   );
 };
 
-// ────────────── Format VND minor (cent) → display string ──────────────
+// ────────────── Format VND budget → display string ──────────────
 
-function formatMoney(cents?: number): string {
-  if (cents == null) return '—';
-  // Treat minor unit as smallest sub-unit. For VND, Meta returns major as cents
-  // (1 VND = 100 internal). Show whole VND for readability.
-  const major = Math.round(cents / 100);
-  return major.toLocaleString('vi-VN') + 'đ';
+function formatMoney(amount?: number): string {
+  if (amount == null) return '—';
+  // VND has no sub-unit on Meta — the API expects whole đồng. Store raw VND
+  // in DB and display the same value. (Earlier code multiplied/divided by 100
+  // assuming cent semantics — wrong for VND, produced "500đ" for a 50,000đ
+  // entry.)
+  return amount.toLocaleString('vi-VN') + 'đ';
 }
 
 // ────────────── Campaign Editor ──────────────
@@ -1328,6 +1431,79 @@ const AdSetSetupGuide: React.FC = () => {
           </pre>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ────────────── Push outcome toast (persists after modal closes) ──────────────
+
+const PushOutcomeToast: React.FC<{ result: PushResult; onDismiss: () => void }> = ({ result, onDismiss }) => {
+  const failedSteps = result.steps?.filter(s => s.status === 'failed') || [];
+  const okSteps    = result.steps?.filter(s => s.status === 'ok') || [];
+  const adsMgr = result.metaCampaignId
+    ? `https://www.facebook.com/adsmanager/manage/campaigns?act=&selected_campaign_ids=${result.metaCampaignId}`
+    : null;
+
+  return (
+    <div className={`rounded-xl border p-3 flex items-start gap-3 ${
+      result.success ? 'status-success' : 'status-danger'
+    }`}>
+      <span className="shrink-0 mt-0.5">
+        {result.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+      </span>
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold">
+            {result.success
+              ? `Push thành công — ${okSteps.length} step OK`
+              : `Push có lỗi — ${failedSteps.length} step failed, ${okSteps.length} OK`}
+          </p>
+          {result.metaCampaignId && (
+            <code className="text-[11px] font-mono opacity-80">
+              campaign {result.metaCampaignId}
+            </code>
+          )}
+        </div>
+        {result.success && (
+          <p className="text-xs opacity-90">
+            Tất cả ad đang PAUSED trên Meta. Vào Meta Ads Manager review + bật khi sẵn sàng.
+          </p>
+        )}
+        {!result.success && result.errors && result.errors.length > 0 && (
+          <ul className="text-xs space-y-0.5 max-h-32 overflow-y-auto">
+            {result.errors.slice(0, 3).map((e, i) => (
+              <li key={i} className="opacity-90 truncate" title={e}>• {e}</li>
+            ))}
+            {result.errors.length > 3 && (
+              <li className="opacity-70">…+{result.errors.length - 3} lỗi khác (xem trong Push modal).</li>
+            )}
+          </ul>
+        )}
+        {result.warnings && result.warnings.length > 0 && (
+          <ul className="text-xs space-y-0.5">
+            {result.warnings.map((w, i) => (
+              <li key={i} className="opacity-90">⚠ {w}</li>
+            ))}
+          </ul>
+        )}
+        {adsMgr && (
+          <a
+            href={adsMgr}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+          >
+            <ExternalLink size={11} /> Mở Meta Ads Manager
+          </a>
+        )}
+      </div>
+      <button
+        onClick={onDismiss}
+        className="shrink-0 p-1 rounded hover:bg-black/10 opacity-70 hover:opacity-100"
+        title="Đóng"
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 };

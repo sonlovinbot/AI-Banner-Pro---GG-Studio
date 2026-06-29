@@ -156,7 +156,8 @@ export const CampaignWizard: React.FC<Props> = ({ banners, onClose, onDone }) =>
       const campaignDraft: AdCampaign = {
         ...newCampaignDraft(plan.campaign.name, plan.campaign.objective),
         useCBO: plan.campaign.useCBO,
-        dailyBudget: plan.campaign.useCBO ? plan.campaign.dailyBudgetVND * 100 : undefined,
+        // VND on Meta is whole đồng — store raw, no x100 cent conversion.
+        dailyBudget: plan.campaign.useCBO ? plan.campaign.dailyBudgetVND : undefined,
         bidStrategy: plan.campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
         metaAccountRefId: brief.metaAccountRefId,
         notes: plan.campaign.notes,
@@ -171,7 +172,7 @@ export const CampaignWizard: React.FC<Props> = ({ banners, onClose, onDone }) =>
           optimizationGoal: adSetPlan.optimizationGoal as any,
           billingEvent: adSetPlan.billingEvent as any,
           dailyBudget: !plan.campaign.useCBO && adSetPlan.dailyBudgetVND
-            ? adSetPlan.dailyBudgetVND * 100
+            ? adSetPlan.dailyBudgetVND
             : undefined,
           targeting: adSetPlan.targeting,
         };
