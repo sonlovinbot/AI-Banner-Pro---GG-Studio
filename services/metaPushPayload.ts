@@ -115,6 +115,22 @@ export function validateForPush(
     if (a.destinationType === 'ON_POST' && !a.promotedPageId && !resolvedPageId) {
       err('adset', a.id, 'promotedPageId', 'Destination ON_POST cần promotedPageId hoặc Page ID từ Meta Account');
     }
+
+    // SALES + OFFSITE_CONVERSIONS / VALUE → must have promoted Pixel + Event Type
+    const needsPixel =
+      (campaign.objective === 'OUTCOME_SALES' &&
+        (a.optimizationGoal === 'OFFSITE_CONVERSIONS' || a.optimizationGoal === 'VALUE')) ||
+      (campaign.objective === 'OUTCOME_LEADS' && a.optimizationGoal === 'OFFSITE_CONVERSIONS');
+    if (needsPixel) {
+      if (!a.promotedPixelId) {
+        err('adset', a.id, 'promotedPixelId',
+          `Ad set "${a.name}" — ${a.optimizationGoal} cần Pixel ID. Vào Edit Ad Set → field Pixel ID.`);
+      }
+      if (!a.promotedCustomEventType) {
+        err('adset', a.id, 'promotedCustomEventType',
+          `Ad set "${a.name}" — cần Custom Event Type (PURCHASE / LEAD / ADD_TO_CART / ...).`);
+      }
+    }
     const t = a.targeting;
     if (!t?.countries || t.countries.length === 0) {
       warn('adset', a.id, 'targeting.countries', 'Chưa có country targeting');
@@ -392,9 +408,7 @@ export function buildMetaPayload(
       start_time: a.startTime,
       end_time: a.endTime,
       destination_type: a.destinationType,
-      promoted_object: a.destinationType === 'ON_POST' && (a.promotedPageId || pageId)
-        ? { page_id: a.promotedPageId || pageId }
-        : undefined,
+      promoted_object: buildPromotedObject(a, campaign, pageId),
       targeting: buildTargeting(a),
       is_dynamic_creative: a.isDynamicCreative,
     }),
@@ -462,6 +476,53 @@ export function buildMetaPayload(
     ads: adPayloads,
     refs,
   };
+}
+
+/** Build the Meta `promoted_object` based on campaign objective + adset
+ *  destination/optimization combination. Different objectives demand different
+ *  fields — Meta rejects ad sets where promoted_object doesn't match. */
+function buildPromotedObject(
+  a: AdSet,
+  campaign: AdCampaign,
+  pageId?: string,
+): Record<string, any> | undefined {
+  const objective = campaign.objective;
+  const goal = a.optimizationGoal;
+
+  // SALES + OFFSITE_CONVERSIONS / VALUE → Pixel-based conversion tracking
+  if (objective === 'OUTCOME_SALES' && (goal === 'OFFSITE_CONVERSIONS' || goal === 'VALUE')) {
+    if (a.promotedPixelId && a.promotedCustomEventType) {
+      return {
+        pixel_id: a.promotedPixelId,
+        custom_event_type: a.promotedCustomEventType,
+      };
+    }
+    return undefined; // validator will catch this
+  }
+
+  // LEADS + OFFSITE_CONVERSIONS → same as SALES (pixel)
+  if (objective === 'OUTCOME_LEADS' && goal === 'OFFSITE_CONVERSIONS') {
+    if (a.promotedPixelId && a.promotedCustomEventType) {
+      return {
+        pixel_id: a.promotedPixelId,
+        custom_event_type: a.promotedCustomEventType,
+      };
+    }
+  }
+
+  // ENGAGEMENT + ON_POST → page_id (Meta auto-derives post)
+  if (objective === 'OUTCOME_ENGAGEMENT' && a.destinationType === 'ON_POST') {
+    const p = a.promotedPageId || pageId;
+    if (p) return { page_id: p };
+  }
+
+  // ENGAGEMENT + ON_PAGE (page likes) → page_id
+  if (objective === 'OUTCOME_ENGAGEMENT' && a.destinationType === 'ON_PAGE') {
+    const p = a.promotedPageId || pageId;
+    if (p) return { page_id: p };
+  }
+
+  return undefined;
 }
 
 function buildTargeting(a: AdSet): MetaTargetingPayload {

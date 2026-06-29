@@ -974,6 +974,55 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, onClose, onS
           </Field>
         </div>
 
+        {/* Pixel + Event Type — required for SALES + OFFSITE_CONVERSIONS/VALUE
+            and LEADS + OFFSITE_CONVERSIONS. Show as a unit so the dependency
+            is obvious. */}
+        <div className="border-t border-line pt-3 space-y-2">
+          <p className="text-xs font-medium text-muted">
+            Conversion tracking (bắt buộc cho SALES + OFFSITE_CONVERSIONS / VALUE)
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Pixel ID">
+              <input
+                type="text"
+                value={draft.promotedPixelId || ''}
+                onChange={(e) => update('promotedPixelId', e.target.value || undefined)}
+                placeholder="VD: 1152715006830829"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
+              />
+              <p className="text-[10px] text-subtle mt-1">
+                Vào Meta Events Manager → Pixels → copy ID.
+              </p>
+            </Field>
+            <Field label="Custom Event Type">
+              <select
+                value={draft.promotedCustomEventType || ''}
+                onChange={(e) => update('promotedCustomEventType', e.target.value || undefined)}
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
+              >
+                <option value="">— Chọn —</option>
+                <option value="PURCHASE">PURCHASE — đơn hàng</option>
+                <option value="ADD_TO_CART">ADD_TO_CART — thêm giỏ hàng</option>
+                <option value="INITIATE_CHECKOUT">INITIATE_CHECKOUT — bắt đầu thanh toán</option>
+                <option value="LEAD">LEAD — đăng ký lead</option>
+                <option value="COMPLETE_REGISTRATION">COMPLETE_REGISTRATION — hoàn tất đăng ký</option>
+                <option value="SUBSCRIBE">SUBSCRIBE — đăng ký nhận tin</option>
+                <option value="CONTACT">CONTACT — liên hệ</option>
+                <option value="VIEW_CONTENT">VIEW_CONTENT — xem nội dung</option>
+                <option value="SEARCH">SEARCH — tìm kiếm</option>
+                <option value="ADD_TO_WISHLIST">ADD_TO_WISHLIST — thêm wishlist</option>
+                <option value="ADD_PAYMENT_INFO">ADD_PAYMENT_INFO — thêm thông tin TT</option>
+                <option value="START_TRIAL">START_TRIAL — bắt đầu trial</option>
+                <option value="SCHEDULE">SCHEDULE — đặt lịch</option>
+                <option value="SUBMIT_APPLICATION">SUBMIT_APPLICATION — gửi đơn</option>
+              </select>
+              <p className="text-[10px] text-subtle mt-1">
+                Pixel phải fire event này trên landing page.
+              </p>
+            </Field>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start time (ISO 8601)">
             <input

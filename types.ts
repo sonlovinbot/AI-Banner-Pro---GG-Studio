@@ -265,6 +265,11 @@ export interface AdSet {
   destinationType?: MetaDestinationType;
   /** For ON_POST destination — Page ID being engagement-promoted. */
   promotedPageId?: string;
+  /** Pixel ID for conversion tracking — required for SALES + OFFSITE_CONVERSIONS/VALUE. */
+  promotedPixelId?: string;
+  /** Custom event the Pixel must fire for conversion attribution.
+   *  Common: PURCHASE, ADD_TO_CART, LEAD, COMPLETE_REGISTRATION, INITIATE_CHECKOUT. */
+  promotedCustomEventType?: string;
   /** For lead-gen — lead form id. */
   leadGenFormId?: string;
   targeting?: AdSetTargeting;

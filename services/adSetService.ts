@@ -17,6 +17,8 @@ import { getSupabase } from './supabaseClient';
 //   end_time timestamptz,
 //   destination_type text,
 //   promoted_page_id text,
+//   promoted_pixel_id text,
+//   promoted_custom_event_type text,
 //   lead_gen_form_id text,
 //   targeting jsonb,
 //   is_dynamic_creative boolean DEFAULT false,
@@ -25,6 +27,11 @@ import { getSupabase } from './supabaseClient';
 //   created_at timestamptz DEFAULT now(),
 //   updated_at timestamptz DEFAULT now()
 // );
+//
+// -- Additive for existing tables:
+// ALTER TABLE ad_sets
+//   ADD COLUMN IF NOT EXISTS promoted_pixel_id text,
+//   ADD COLUMN IF NOT EXISTS promoted_custom_event_type text;
 // CREATE INDEX ON ad_sets (user_id, campaign_id);
 // CREATE INDEX ON ad_sets (campaign_id, updated_at DESC);
 // ALTER TABLE ad_sets ENABLE ROW LEVEL SECURITY;
@@ -54,6 +61,8 @@ function rowToAdSet(r: any): AdSet {
     endTime: r.end_time || undefined,
     destinationType: (r.destination_type as MetaDestinationType) || undefined,
     promotedPageId: r.promoted_page_id || undefined,
+    promotedPixelId: r.promoted_pixel_id || undefined,
+    promotedCustomEventType: r.promoted_custom_event_type || undefined,
     leadGenFormId: r.lead_gen_form_id || undefined,
     targeting: (r.targeting as AdSetTargeting) || undefined,
     isDynamicCreative: r.is_dynamic_creative ?? undefined,
@@ -80,6 +89,8 @@ function adSetToRow(a: AdSet, userId: string) {
     end_time: a.endTime || null,
     destination_type: a.destinationType || null,
     promoted_page_id: a.promotedPageId || null,
+    promoted_pixel_id: a.promotedPixelId || null,
+    promoted_custom_event_type: a.promotedCustomEventType || null,
     lead_gen_form_id: a.leadGenFormId || null,
     targeting: a.targeting || null,
     is_dynamic_creative: a.isDynamicCreative ?? false,
