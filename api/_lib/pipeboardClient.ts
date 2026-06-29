@@ -71,11 +71,34 @@ export async function callPipeboardTool<T = any>(
     throw new PipeboardError(toolName, res.status, errText);
   }
   const content = result?.content?.[0];
+  let parsed: any;
   if (content?.type === 'text' && content.text) {
-    try { return JSON.parse(content.text) as T; } catch {
-      // Tool returned non-JSON text — pass through as { text }
+    try { parsed = JSON.parse(content.text); } catch {
       return { text: content.text } as any;
     }
+  } else {
+    parsed = result ?? payload;
   }
-  return (result ?? payload) as T;
+
+  // Pipeboard often wraps the actual tool output in { data: "<json string>" }.
+  // When Meta returned an error (e.g. "Unsupported post request"), Pipeboard
+  // packages it inside `data` rather than the top-level `error` field, so we
+  // have to unwrap and re-check before treating the response as success.
+  if (parsed && typeof parsed.data === 'string') {
+    let inner: any;
+    try { inner = JSON.parse(parsed.data); } catch { inner = { raw: parsed.data }; }
+    if (inner && inner.error) {
+      // Drill into nested error shapes Pipeboard/Meta layer on top of each other
+      const flatten = (e: any): string => {
+        if (!e) return '';
+        if (typeof e === 'string') return e;
+        if (e.message) return e.message + (e.details ? ` — ${flatten(e.details)}` : '');
+        if (e.error) return flatten(e.error);
+        return JSON.stringify(e).slice(0, 300);
+      };
+      throw new PipeboardError(toolName, res.status, flatten(inner.error), inner);
+    }
+    parsed = inner;
+  }
+  return parsed as T;
 }
