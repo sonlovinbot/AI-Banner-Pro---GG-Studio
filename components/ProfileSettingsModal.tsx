@@ -20,6 +20,9 @@ import {
   newMetaAccountDraft, validateMetaAccount, MetaAccountsSetupRequiredError,
 } from '../services/metaAccountsService';
 import {
+  fetchAllForAccount, readMetaCache, clearMetaCache,
+} from '../services/metaFetchService';
+import {
   inventoryLocalStorage, clearGroups, formatBytes, StorageReport, StorageGroupId,
 } from '../services/storageCleanupService';
 
@@ -610,9 +613,41 @@ const MetaAccountForm: React.FC<{
   const [draft, setDraft] = useState<MetaAccount>(account);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [cache, setCache] = useState(() => readMetaCache(account.accountId));
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const update = <K extends keyof MetaAccount>(k: K, v: MetaAccount[K]) =>
     setDraft(prev => ({ ...prev, [k]: v }));
+
+  const refreshCache = () => setCache(readMetaCache(draft.accountId));
+
+  const handleAutoFetch = async () => {
+    setFetchError(null);
+    if (!draft.accountId?.startsWith('act_')) {
+      setFetchError('Nhập Ad Account ID hợp lệ (act_...) trước khi fetch.');
+      return;
+    }
+    setFetching(true);
+    try {
+      const result = await fetchAllForAccount(draft.accountId);
+      refreshCache();
+      // Auto-pick if there's exactly one option and the field is empty
+      if (!draft.pageId && result.pages?.length === 1) update('pageId', result.pages[0].id);
+      if (!draft.instagramActorId && result.instagramAccounts?.length === 1) {
+        update('instagramActorId', result.instagramAccounts[0].id);
+      }
+    } catch (e: any) {
+      setFetchError(e?.message || 'Fetch lỗi');
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const handleClearCache = () => {
+    clearMetaCache(draft.accountId);
+    refreshCache();
+  };
 
   const save = async () => {
     const errs = validateMetaAccount(draft);
@@ -658,7 +693,7 @@ const MetaAccountForm: React.FC<{
             <input
               type="text"
               value={draft.accountId}
-              onChange={(e) => update('accountId', e.target.value.trim())}
+              onChange={(e) => { update('accountId', e.target.value.trim()); setCache(readMetaCache(e.target.value.trim())); }}
               placeholder="act_XXXXXXXXX"
               className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
             />
@@ -667,33 +702,111 @@ const MetaAccountForm: React.FC<{
             </p>
           </div>
 
+          {/* Auto-fetch from Meta — populates Page / Pixel / IG dropdowns
+              so the user doesn't type 15-digit numeric IDs by hand. */}
+          <div className="border border-line/70 rounded-lg p-3 bg-raised/40 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-fg">Auto-fetch từ Meta</p>
+                <p className="text-[10px] text-muted">
+                  {cache.fetchedAt
+                    ? `Cache: ${cache.pages?.length ?? 0} pages · ${cache.pixels?.length ?? 0} pixels · ${cache.instagramAccounts?.length ?? 0} IG`
+                    : 'Chưa fetch. Bấm để pre-load Pages/Pixels/IG.'}
+                </p>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                {cache.fetchedAt && (
+                  <button
+                    onClick={handleClearCache}
+                    className="text-[11px] px-2 py-1 rounded bg-canvas border border-line hover:bg-raised text-muted"
+                  >Xoá cache</button>
+                )}
+                <button
+                  onClick={handleAutoFetch}
+                  disabled={fetching || !draft.accountId?.startsWith('act_')}
+                  className="text-[11px] px-2.5 py-1 rounded bg-brand hover:bg-brand/90 text-white disabled:opacity-50 flex items-center gap-1"
+                >
+                  {fetching ? <Loader2 size={12} className="animate-spin" /> : null}
+                  {fetching ? 'Đang tải…' : 'Fetch'}
+                </button>
+              </div>
+            </div>
+            {fetchError && (
+              <p className="text-[11px] text-red-400">{fetchError}</p>
+            )}
+          </div>
+
           <div>
-            <label className="text-[11px] font-medium text-muted block mb-1">Facebook Page ID *</label>
-            <input
-              type="text"
-              value={draft.pageId}
-              onChange={(e) => update('pageId', e.target.value.trim())}
-              placeholder="VD: 102345678901234"
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
-            />
+            <label className="text-[11px] font-medium text-muted block mb-1">Facebook Page *</label>
+            {cache.pages && cache.pages.length > 0 ? (
+              <select
+                value={draft.pageId}
+                onChange={(e) => update('pageId', e.target.value)}
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
+              >
+                <option value="">— Chọn Page —</option>
+                {cache.pages.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={draft.pageId}
+                onChange={(e) => update('pageId', e.target.value.trim())}
+                placeholder="VD: 102345678901234"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
+              />
+            )}
             <p className="text-[10px] text-subtle mt-0.5">
-              Page sẽ publish ad. Lấy từ Page → Settings → Page Info.
+              {cache.pages?.length
+                ? 'Pick từ list đã fetch.'
+                : 'Bấm "Fetch" ở trên để load list Page tự động — hoặc gõ Page ID tay.'}
             </p>
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-muted block mb-1">Instagram Actor ID</label>
-            <input
-              type="text"
-              value={draft.instagramActorId || ''}
-              onChange={(e) => update('instagramActorId', e.target.value.trim() || undefined)}
-              placeholder="optional — IG account numeric ID"
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
-            />
+            <label className="text-[11px] font-medium text-muted block mb-1">Instagram Actor</label>
+            {cache.instagramAccounts && cache.instagramAccounts.length > 0 ? (
+              <select
+                value={draft.instagramActorId || ''}
+                onChange={(e) => update('instagramActorId', e.target.value || undefined)}
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
+              >
+                <option value="">— Không dùng (chỉ FB) —</option>
+                {cache.instagramAccounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.username || a.name || a.id} ({a.id})</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={draft.instagramActorId || ''}
+                onChange={(e) => update('instagramActorId', e.target.value.trim() || undefined)}
+                placeholder="optional — IG account numeric ID"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
+              />
+            )}
             <p className="text-[10px] text-subtle mt-0.5">
               Không bắt buộc. Nếu để trống, ad chỉ chạy trên FB.
             </p>
           </div>
+
+          {cache.pixels && cache.pixels.length > 0 && (
+            <div className="border-t border-line/50 pt-3">
+              <p className="text-[11px] font-medium text-muted mb-1">
+                Pixels cached cho account ({cache.pixels.length})
+              </p>
+              <ul className="text-[11px] text-subtle space-y-0.5 max-h-20 overflow-y-auto">
+                {cache.pixels.map(p => (
+                  <li key={p.id} className="font-mono">• {p.name} <span className="text-muted">({p.id})</span></li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-subtle mt-1">
+                AdSet editor sẽ pick từ list này — không cần gõ Pixel ID tay nữa.
+              </p>
+            </div>
+          )}
 
           <label className="text-xs text-fg flex items-center gap-2 cursor-pointer pt-1">
             <input

@@ -24,6 +24,7 @@ import {
 } from '../../services/adSetService';
 import { proxiedBannerUrl } from '../../services/cdnProxy';
 import { Image as ImageIcon } from 'lucide-react';
+import { readMetaCache } from '../../services/metaFetchService';
 
 interface Props {
   campaigns: AdCampaign[];
@@ -471,6 +472,7 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
         <AdSetEditor
           adSet={editingAdSet}
           campaign={campaigns.find(c => c.id === editingAdSet.campaignId)}
+          metaAccounts={metaAccounts}
           onClose={() => setEditingAdSet(null)}
           onSave={async (a) => {
             await saveAdSetToCloud(a);
@@ -816,11 +818,12 @@ const CampaignEditor: React.FC<CampaignEditorProps> = ({ campaign, metaAccounts,
 interface AdSetEditorProps {
   adSet: AdSet;
   campaign?: AdCampaign;
+  metaAccounts: MetaAccount[];
   onClose: () => void;
   onSave: (a: AdSet) => Promise<void>;
 }
 
-const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, onClose, onSave }) => {
+const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, metaAccounts, onClose, onSave }) => {
   const [draft, setDraft] = useState<AdSet>(adSet);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -830,6 +833,13 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, onClose, onS
 
   const updateTargeting = <K extends keyof AdSetTargeting>(k: K, v: AdSetTargeting[K]) =>
     setDraft(prev => ({ ...prev, targeting: { ...(prev.targeting || {}), [k]: v } }));
+
+  // Resolve account to read its cached pixel/page list from Settings auto-fetch.
+  const resolvedAccount = useMemo(() => {
+    if (campaign?.metaAccountRefId) return metaAccounts.find(a => a.id === campaign.metaAccountRefId);
+    return undefined;
+  }, [campaign?.metaAccountRefId, metaAccounts]);
+  const cache = useMemo(() => readMetaCache(resolvedAccount?.accountId || ''), [resolvedAccount?.accountId]);
 
   const goalOptions = validOptimizationGoals(campaign?.objective, draft.destinationType);
   const cboOn = !!campaign?.useCBO;
@@ -986,16 +996,33 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, onClose, onS
             Conversion tracking (bắt buộc cho SALES + OFFSITE_CONVERSIONS / VALUE)
           </p>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Pixel ID">
-              <input
-                type="text"
-                value={draft.promotedPixelId || ''}
-                onChange={(e) => update('promotedPixelId', e.target.value || undefined)}
-                placeholder="VD: 1152715006830829"
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
-              />
+            <Field label="Pixel">
+              {cache.pixels && cache.pixels.length > 0 ? (
+                <select
+                  value={draft.promotedPixelId || ''}
+                  onChange={(e) => update('promotedPixelId', e.target.value || undefined)}
+                  className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
+                >
+                  <option value="">— Chọn Pixel —</option>
+                  {cache.pixels.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={draft.promotedPixelId || ''}
+                  onChange={(e) => update('promotedPixelId', e.target.value || undefined)}
+                  placeholder="VD: 1152715006830829"
+                  className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-brand"
+                />
+              )}
               <p className="text-[10px] text-subtle mt-1">
-                Vào Meta Events Manager → Pixels → copy ID.
+                {cache.pixels?.length
+                  ? `Pick từ ${cache.pixels.length} pixel đã fetch ở Settings.`
+                  : resolvedAccount
+                    ? 'Chưa cache pixel. Vào Settings → Meta Accounts → mở account → bấm "Fetch".'
+                    : 'Campaign chưa link Meta Account → không thể auto-load pixel.'}
               </p>
             </Field>
             <Field label="Custom Event Type">
