@@ -417,19 +417,36 @@ async function handlerImpl(req: Request): Promise<Response> {
   }
 
   // Step 4: Create creatives via Pipeboard
+  // Pipeboard's create_ad_creative expects image_hash + flat link fields at
+  // top level — it constructs Meta's object_story_spec internally. Passing
+  // a pre-built object_story_spec causes Pipeboard's media-validator to fail
+  // with "No media provided" because it doesn't drill into link_data.
   const metaCreativeByLocal: Record<string, string> = {};
   for (const c of payload.creatives) {
     try {
       const hash = imageHashByBanner[c.localBannerId];
       if (!hash) throw new Error(`No image_hash for banner ${c.localBannerId}`);
-      const bodyWithHash = JSON.parse(JSON.stringify(c.body));
-      if (bodyWithHash.object_story_spec?.link_data) {
-        bodyWithHash.object_story_spec.link_data.image_hash = hash;
-      }
-      const out = await callPipeboardTool('create_ad_creative', {
+      const oss = c.body.object_story_spec as any;
+      const link = oss?.link_data || {};
+
+      const creativeArgs: Record<string, any> = {
         account_id: accountId,
-        ...bodyWithHash,
-      }, pipeboardToken);
+        name: c.body.name,
+        image_hash: hash,
+        page_id: oss?.page_id,
+        link_url: link.link,
+        message: link.message,
+        headline: link.name,
+        description: link.description,
+        call_to_action_type: link.call_to_action?.type,
+      };
+      if (oss?.instagram_actor_id) creativeArgs.instagram_actor_id = oss.instagram_actor_id;
+      // Strip null/undefined to keep payload clean
+      for (const k of Object.keys(creativeArgs)) {
+        if (creativeArgs[k] == null) delete creativeArgs[k];
+      }
+
+      const out = await callPipeboardTool('create_ad_creative', creativeArgs, pipeboardToken);
       const id = extractId(out);
       if (!id) throw new Error(`No creative id in response: ${JSON.stringify(out).slice(0, 200)}`);
       metaCreativeByLocal[c.localId] = id;

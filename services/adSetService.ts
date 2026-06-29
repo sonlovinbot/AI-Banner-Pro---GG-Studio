@@ -180,7 +180,10 @@ export function validOptimizationGoals(
     case 'OUTCOME_LEADS':
       return ['LEAD_GENERATION', 'QUALITY_LEAD', 'QUALITY_CALL', 'OFFSITE_CONVERSIONS', 'LINK_CLICKS'];
     case 'OUTCOME_SALES':
-      return ['OFFSITE_CONVERSIONS', 'VALUE', 'CONVERSIONS'];
+      // OFFSITE_CONVERSIONS + VALUE require a Pixel installed on the destination
+      // URL. LINK_CLICKS / LANDING_PAGE_VIEWS / IMPRESSIONS / REACH work
+      // without a pixel — useful for first push when pixel isn't set up.
+      return ['LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'OFFSITE_CONVERSIONS', 'VALUE', 'IMPRESSIONS', 'REACH'];
     case 'OUTCOME_APP_PROMOTION':
       return ['OFFSITE_CONVERSIONS', 'LINK_CLICKS'];
     default:
