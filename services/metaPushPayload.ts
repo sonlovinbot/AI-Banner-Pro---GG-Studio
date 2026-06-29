@@ -135,17 +135,23 @@ export function validateForPush(
       err('adset', a.id, 'promotedPageId', 'Destination ON_POST cần promotedPageId hoặc Page ID từ Meta Account');
     }
 
-    // SALES + OFFSITE_CONVERSIONS / VALUE → must have promoted Pixel + Event Type
+    // promoted_object requirements per (objective, goal) combo.
+    // Meta rejects ad creation with error_subcode 1885154 if missing.
+    const obj = campaign.objective;
+    const goal = a.optimizationGoal;
     const needsPixel =
-      (campaign.objective === 'OUTCOME_SALES' &&
-        (a.optimizationGoal === 'OFFSITE_CONVERSIONS' || a.optimizationGoal === 'VALUE')) ||
-      (campaign.objective === 'OUTCOME_LEADS' && a.optimizationGoal === 'OFFSITE_CONVERSIONS');
+      (obj === 'OUTCOME_SALES' && (goal === 'OFFSITE_CONVERSIONS' || goal === 'VALUE')) ||
+      (obj === 'OUTCOME_LEADS' && (goal === 'OFFSITE_CONVERSIONS' || goal === 'QUALITY_LEAD'));
+    const needsPage =
+      (obj === 'OUTCOME_LEADS' && (goal === 'LEAD_GENERATION' || goal === 'QUALITY_CALL')) ||
+      (obj === 'OUTCOME_ENGAGEMENT' && (a.destinationType === 'ON_POST' || a.destinationType === 'ON_PAGE'));
+
     if (needsPixel) {
       if (!a.promotedPixelId) {
         issues.push({
           level: 'error', scope: 'adset', refId: a.id, field: 'promotedPixelId',
           displayName: a.name,
-          message: `Ad set "${a.name}" — ${a.optimizationGoal} cần Pixel ID. Mở Edit Ad Set → section Conversion tracking.`,
+          message: `Ad set "${a.name}" — ${goal} cần Pixel ID. Mở Edit Ad Set → section Conversion tracking.`,
           fix: { type: 'edit-adset', adsetId: a.id },
         });
       }
@@ -154,6 +160,19 @@ export function validateForPush(
           level: 'error', scope: 'adset', refId: a.id, field: 'promotedCustomEventType',
           displayName: a.name,
           message: `Ad set "${a.name}" — cần Custom Event Type (PURCHASE / LEAD / ADD_TO_CART / ...).`,
+          fix: { type: 'edit-adset', adsetId: a.id },
+        });
+      }
+    }
+
+    if (needsPage) {
+      const resolvedPageId = a.promotedPageId || resolved?.pageId || campaign.metaPageId;
+      if (!resolvedPageId) {
+        issues.push({
+          level: 'error', scope: 'adset', refId: a.id, field: 'promotedPageId',
+          displayName: a.name,
+          message: `Ad set "${a.name}" — ${obj}+${goal || a.destinationType} cần Page ID. ` +
+            `Vào Settings → Meta Accounts gán Page, hoặc Edit Ad Set → nhập Promoted Page ID.`,
           fix: { type: 'edit-adset', adsetId: a.id },
         });
       }
@@ -515,40 +534,43 @@ function buildPromotedObject(
 ): Record<string, any> | undefined {
   const objective = campaign.objective;
   const goal = a.optimizationGoal;
-
-  // SALES + OFFSITE_CONVERSIONS / VALUE → Pixel-based conversion tracking
-  if (objective === 'OUTCOME_SALES' && (goal === 'OFFSITE_CONVERSIONS' || goal === 'VALUE')) {
-    if (a.promotedPixelId && a.promotedCustomEventType) {
-      return {
-        pixel_id: a.promotedPixelId,
-        custom_event_type: a.promotedCustomEventType,
-      };
-    }
-    return undefined; // validator will catch this
-  }
-
-  // LEADS + OFFSITE_CONVERSIONS → same as SALES (pixel)
-  if (objective === 'OUTCOME_LEADS' && goal === 'OFFSITE_CONVERSIONS') {
-    if (a.promotedPixelId && a.promotedCustomEventType) {
-      return {
-        pixel_id: a.promotedPixelId,
-        custom_event_type: a.promotedCustomEventType,
-      };
-    }
-  }
-
-  // ENGAGEMENT + ON_POST → page_id (Meta auto-derives post)
-  if (objective === 'OUTCOME_ENGAGEMENT' && a.destinationType === 'ON_POST') {
+  const pixelObj = (a.promotedPixelId && a.promotedCustomEventType)
+    ? { pixel_id: a.promotedPixelId, custom_event_type: a.promotedCustomEventType }
+    : undefined;
+  const pageObj = (() => {
     const p = a.promotedPageId || pageId;
-    if (p) return { page_id: p };
+    return p ? { page_id: p } : undefined;
+  })();
+
+  // SALES — both goals require Pixel
+  if (objective === 'OUTCOME_SALES') {
+    if (goal === 'OFFSITE_CONVERSIONS' || goal === 'VALUE') return pixelObj;
+    return undefined;
   }
 
-  // ENGAGEMENT + ON_PAGE (page likes) → page_id
-  if (objective === 'OUTCOME_ENGAGEMENT' && a.destinationType === 'ON_PAGE') {
-    const p = a.promotedPageId || pageId;
-    if (p) return { page_id: p };
+  // LEADS — depends on goal
+  if (objective === 'OUTCOME_LEADS') {
+    // Native Page lead form (instant form)
+    if (goal === 'LEAD_GENERATION') return pageObj;
+    // Off-site lead via Pixel
+    if (goal === 'OFFSITE_CONVERSIONS' || goal === 'QUALITY_LEAD') return pixelObj;
+    // Call leads (rings the Page phone)
+    if (goal === 'QUALITY_CALL') return pageObj;
+    // LINK_CLICKS — no promoted_object
+    return undefined;
   }
 
+  // ENGAGEMENT — page-targeted destinations
+  if (objective === 'OUTCOME_ENGAGEMENT') {
+    if (a.destinationType === 'ON_POST') return pageObj;
+    if (a.destinationType === 'ON_PAGE') return pageObj;
+    return undefined;
+  }
+
+  // APP_PROMOTION — needs application_id (not modeled yet)
+  if (objective === 'OUTCOME_APP_PROMOTION') return undefined;
+
+  // TRAFFIC / AWARENESS — no promoted_object required
   return undefined;
 }
 

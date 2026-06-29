@@ -498,6 +498,20 @@ async function handlerImpl(req: Request): Promise<Response> {
   }
 
   const failed = steps.filter(s => s.status === 'failed');
+  // Build cleanup warning if anything was created on Meta but the push didn't finish.
+  // We can't auto-rollback (user might already be editing in Meta UI), but we surface
+  // exactly what was orphaned so they can dọn tay nhanh.
+  const warnings: string[] = [];
+  if (failed.length > 0) {
+    const okSteps = steps.filter(s => s.status === 'ok' && s.metaId);
+    const orphaned = okSteps.map(s => `${s.step} ${s.metaId}`);
+    if (orphaned.length > 0) {
+      warnings.push(
+        `⚠️ Đã tạo trên Meta nhưng push KHÔNG hoàn chỉnh. Vào Meta Ads Manager xóa thủ công: ` +
+        orphaned.join(', '),
+      );
+    }
+  }
   const resp: PushResponse = {
     mode: 'push',
     success: failed.length === 0,
@@ -505,6 +519,7 @@ async function handlerImpl(req: Request): Promise<Response> {
     metaCampaignId,
     steps,
     errors: failed.map(s => `${s.step} ${s.localId || ''}: ${s.error}`),
+    warnings: warnings.length ? warnings : undefined,
   };
   return json(resp);
 }
