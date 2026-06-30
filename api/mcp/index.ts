@@ -11,6 +11,7 @@
 import {
   errorResponse, jsonResponse, supaSelectOne, supaUpdate,
 } from '../_lib/mcpOAuth';
+import { getTool, toolListResponse } from './tools';
 
 export const config = { runtime: 'edge' };
 
@@ -106,17 +107,38 @@ export default async function handler(req: Request): Promise<Response> {
       return new Response(null, { status: 202 });
 
     case 'tools/list':
-      // Sprint C scaffold — empty list. Real tools in Sprint D.
-      return rpcResult(rpc.id ?? null, {
-        tools: [],
-        _meta: {
-          note: 'Sprint C scaffold — tool implementations land in Sprint D',
-          server: SERVER_INFO,
-        },
-      });
+      // Return only tools the granted scope covers — narrower scope = fewer tools.
+      return rpcResult(rpc.id ?? null, toolListResponse(tokenRow.scope || []));
 
-    case 'tools/call':
-      return rpcError(rpc.id ?? null, -32601, 'No tools implemented yet (Sprint D)');
+    case 'tools/call': {
+      const name = rpc.params?.name;
+      const args = rpc.params?.arguments || {};
+      if (!name) return rpcError(rpc.id ?? null, -32602, 'Missing tool name');
+      const tool = getTool(name);
+      if (!tool) return rpcError(rpc.id ?? null, -32601, `Unknown tool: ${name}`);
+
+      // Scope enforcement — refuse if granted scope misses any required scope.
+      const grantedScope: string[] = tokenRow.scope || [];
+      const missing = tool.requiredScopes.filter(s => !grantedScope.includes(s));
+      if (missing.length > 0) {
+        return rpcError(rpc.id ?? null, -32001,
+          `Token missing required scope(s): ${missing.join(', ')}`, 403);
+      }
+
+      try {
+        const result = await tool.handler(args, {
+          userId: tokenRow.user_id,
+          scope: grantedScope,
+          accessToken,
+        });
+        return rpcResult(rpc.id ?? null, result);
+      } catch (e: any) {
+        return rpcResult(rpc.id ?? null, {
+          content: [{ type: 'text', text: `Tool ${name} error: ${e?.message || String(e)}` }],
+          isError: true,
+        });
+      }
+    }
 
     case 'ping':
       return rpcResult(rpc.id ?? null, {});
