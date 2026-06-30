@@ -16,6 +16,9 @@
 //   - Returns text content with JSON-stringified payload — Claude parses it.
 
 import { supaSelectOne } from '../_lib/mcpOAuth';
+import {
+  submitCoachioTask, checkCoachioStatus, fetchImageBytes, uploadBytesToBunny,
+} from '../_lib/coachioGen';
 
 export interface McpToolContext {
   userId: string;
@@ -401,6 +404,278 @@ const delete_creative_draft: McpToolDef = {
   },
 };
 
+// ─────────────────── Banner generation (async, 2-call pattern) ───────────────────
+//
+// Coachio gen takes 30-90s — too long for a single 25s Edge call. Split into:
+//   1. start_banner_gen  → submit task, return our internal task_id (~2s)
+//   2. check_banner_gen  → poll Coachio once, finalize on completion (~3-5s)
+//
+// Claude loops check every 10-30s until status='completed' or 'failed'.
+
+const VALID_ASPECT_RATIOS_GEN = ['1:1', '4:3', '3:4', '16:9', '9:16'];
+const VALID_MODELS = ['gpt_image_2', 'nano-banana-pro'];
+
+const start_banner_gen: McpToolDef = {
+  name: 'start_banner_gen',
+  description:
+    'Kick off a Coachio banner generation. Returns a task_id immediately (~2s). ' +
+    'You MUST then call check_banner_gen repeatedly (every 10-30s) until ' +
+    'status=completed or failed. Typical end-to-end: 30-90s. ' +
+    'Three modes: (1) text-only — no refs; (2) style ref only; (3) full refs. ' +
+    'Reference banner_ids must come from list_banners (must be user\'s own).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        minLength: 5,
+        maxLength: 2000,
+        description: 'Vivid description of what to render.',
+      },
+      aspect_ratio: {
+        type: 'string',
+        enum: VALID_ASPECT_RATIOS_GEN,
+        default: '1:1',
+      },
+      model: {
+        type: 'string',
+        enum: VALID_MODELS,
+        default: 'gpt_image_2',
+        description: 'gpt_image_2 = OpenAI GPT-Image-2 (fast). nano-banana-pro = Gemini-based (higher quality, slower).',
+      },
+      style_reference_banner_id: {
+        type: 'string',
+        description: 'Optional banner_id to use as style/composition reference',
+      },
+      product_reference_banner_id: {
+        type: 'string',
+        description: 'Optional banner_id to use as product reference (object integrated into design)',
+      },
+    },
+    required: ['prompt'],
+  },
+  requiredScopes: ['banners:write'],
+  handler: async (args, ctx) => {
+    // 1. Pull user's Coachio API key from DB.
+    const keyRow = await supaSelectOne<any>('user_api_keys',
+      `user_id=eq.${ctx.userId}&select=coachio_api_key`);
+    const apiKey = keyRow?.coachio_api_key;
+    if (!apiKey) {
+      return error(
+        'Server không có Coachio API key của user. Mở Banner Ads Pro → Settings → Coachio AI → save key. ' +
+        'Sau khi save, key sẽ tự sync sang server.',
+      );
+    }
+
+    // 2. Resolve reference banner URLs if provided.
+    const refUrls: string[] = [];
+    for (const refKey of ['style_reference_banner_id', 'product_reference_banner_id']) {
+      const refId = args[refKey];
+      if (!refId) continue;
+      const ref = await supaSelectOne<any>('banner_history',
+        `id=eq.${refId}&user_id=eq.${ctx.userId}&select=image_url`);
+      if (!ref?.image_url) {
+        return error(`Reference banner ${refId} not found or no image_url`);
+      }
+      refUrls.push(ref.image_url);
+    }
+
+    // 3. Submit to Coachio.
+    let coachioTaskId: string;
+    try {
+      coachioTaskId = await submitCoachioTask({
+        apiKey,
+        prompt: args.prompt,
+        aspectRatio: args.aspect_ratio || '1:1',
+        resolution: '1K',
+        modelIdentifier: args.model || 'gpt_image_2',
+        imageUrls: refUrls,
+      });
+    } catch (e: any) {
+      return error(`Coachio submit failed: ${e?.message || e}`);
+    }
+
+    // 4. Insert our internal tracking row.
+    const taskId = 'gen_' + newId();
+    try {
+      await supaPost('mcp_gen_tasks', {
+        id: taskId,
+        user_id: ctx.userId,
+        coachio_task_id: coachioTaskId,
+        status: 'pending',
+        prompt: args.prompt,
+        aspect_ratio: args.aspect_ratio || '1:1',
+        model: args.model || 'gpt_image_2',
+        style_reference_banner_id: args.style_reference_banner_id || null,
+        product_reference_banner_id: args.product_reference_banner_id || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      return error(`Coachio task submitted but local tracker insert failed: ${e?.message || e}`);
+    }
+
+    return textJson({
+      task_id: taskId,
+      coachio_task_id: coachioTaskId,
+      status: 'pending',
+      message:
+        `Started gen task ${taskId}. Call check_banner_gen({task_id: "${taskId}"}) every 10-30 seconds ` +
+        `until status=completed (~30-90s typical) or failed. Don't poll faster than every 5s.`,
+    });
+  },
+};
+
+const check_banner_gen: McpToolDef = {
+  name: 'check_banner_gen',
+  description:
+    'Poll a Coachio gen task started by start_banner_gen. Returns one of: ' +
+    'pending / generating / completed (with banner_id + image_url) / failed. ' +
+    'When completed, the image is automatically mirrored to our CDN and saved ' +
+    'in banner_history — ready to pass into Meta MCP ads_create_creative.',
+  inputSchema: {
+    type: 'object',
+    properties: { task_id: { type: 'string' } },
+    required: ['task_id'],
+  },
+  requiredScopes: ['banners:write'],
+  handler: async (args, ctx) => {
+    const taskRow = await supaSelectOne<any>('mcp_gen_tasks',
+      `id=eq.${args.task_id}&user_id=eq.${ctx.userId}&select=*`);
+    if (!taskRow) return error(`Task ${args.task_id} not found`);
+
+    // Already terminal? Return cached result without re-polling Coachio.
+    if (taskRow.status === 'completed') {
+      return textJson({
+        task_id: taskRow.id,
+        status: 'completed',
+        banner_id: taskRow.banner_id,
+        image_url: taskRow.image_url,
+        message: 'Already completed (cached).',
+      });
+    }
+    if (taskRow.status === 'failed') {
+      return textJson({
+        task_id: taskRow.id,
+        status: 'failed',
+        error: taskRow.error_message,
+      });
+    }
+
+    // Need user's Coachio key for the status poll.
+    const keyRow = await supaSelectOne<any>('user_api_keys',
+      `user_id=eq.${ctx.userId}&select=coachio_api_key`);
+    const apiKey = keyRow?.coachio_api_key;
+    if (!apiKey) return error('Coachio API key missing — task cannot be polled');
+
+    // 1. Poll Coachio status.
+    let status;
+    try {
+      status = await checkCoachioStatus(taskRow.coachio_task_id, apiKey);
+    } catch (e: any) {
+      return error(`Status check failed: ${e?.message || e}`);
+    }
+
+    // Still working? Just update our row + return.
+    if (status.status === 'pending' || status.status === 'processing') {
+      const localStatus = status.status === 'processing' ? 'generating' : 'pending';
+      if (localStatus !== taskRow.status) {
+        await supaPatch('mcp_gen_tasks', `id=eq.${taskRow.id}`, {
+          status: localStatus,
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      return textJson({
+        task_id: taskRow.id,
+        status: localStatus,
+        message: `Still ${localStatus}. Wait 10-30s and call again.`,
+      });
+    }
+
+    if (status.status === 'failed') {
+      await supaPatch('mcp_gen_tasks', `id=eq.${taskRow.id}`, {
+        status: 'failed',
+        error_message: status.errorMessage || 'unknown',
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      return textJson({
+        task_id: taskRow.id,
+        status: 'failed',
+        error: status.errorMessage,
+      });
+    }
+
+    // status === 'completed' → mirror to Bunny + save banner_history.
+    const sourceUrl = status.outputUrls?.[0];
+    if (!sourceUrl) {
+      await supaPatch('mcp_gen_tasks', `id=eq.${taskRow.id}`, {
+        status: 'failed',
+        error_message: 'Coachio completed but no output URL',
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      return error('Coachio completed but no output URL');
+    }
+
+    // 2. Fetch image from Coachio CDN.
+    let fetched;
+    try {
+      fetched = await fetchImageBytes(sourceUrl);
+    } catch (e: any) {
+      return error(`Failed to fetch Coachio image: ${e?.message || e}`);
+    }
+
+    // 3. Upload to our Bunny CDN (stable URL for Meta MCP).
+    let uploaded;
+    try {
+      uploaded = await uploadBytesToBunny({
+        userId: ctx.userId,
+        bytes: fetched.bytes,
+        mimeType: fetched.mimeType,
+        folder: 'banners',
+      });
+    } catch (e: any) {
+      return error(`Bunny upload failed: ${e?.message || e}`);
+    }
+
+    // 4. Insert banner_history row.
+    const bannerId = newId();
+    try {
+      await supaPost('banner_history', {
+        id: bannerId,
+        user_id: ctx.userId,
+        image_url: uploaded.url,
+        prompt_used: taskRow.prompt,
+        model: taskRow.model,
+        quality: '1K',
+        aspect_ratio: taskRow.aspect_ratio,
+        parent_id: taskRow.style_reference_banner_id || null,
+        version: taskRow.style_reference_banner_id ? 2 : 1,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      return error(`Image uploaded but banner_history insert failed: ${e?.message || e}`);
+    }
+
+    // 5. Mark task complete.
+    await supaPatch('mcp_gen_tasks', `id=eq.${taskRow.id}`, {
+      status: 'completed',
+      banner_id: bannerId,
+      image_url: uploaded.url,
+      updated_at: new Date().toISOString(),
+    }).catch(() => {});
+
+    return textJson({
+      task_id: taskRow.id,
+      status: 'completed',
+      banner_id: bannerId,
+      image_url: uploaded.url,
+      message:
+        `Banner ${bannerId} ready. Pass image_url to Meta MCP ads_create_creative, ` +
+        `or to save_creative_draft.`,
+    });
+  },
+};
+
 // ─────────────────── Registry + helpers ───────────────────
 
 export const ALL_TOOLS: McpToolDef[] = [
@@ -415,10 +690,9 @@ export const ALL_TOOLS: McpToolDef[] = [
   save_creative_draft,
   update_creative_draft,
   delete_creative_draft,
-  // Banner generation tools removed — Coachio requires reference images
-  // which don't fit the MCP text-only call shape. Users generate banners in
-  // the Banner Ads Pro UI; Claude calls list_banners to pick + chain via
-  // Meta MCP.
+  // Banner generation — async 2-call pattern (Coachio takes 30-90s)
+  start_banner_gen,
+  check_banner_gen,
 ];
 
 export function getTool(name: string): McpToolDef | undefined {

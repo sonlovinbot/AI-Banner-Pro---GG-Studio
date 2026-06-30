@@ -1,4 +1,5 @@
 import { UploadedImage } from '../types';
+import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 
 const COACHIO_BASE_URL = 'https://api.coachio.ai/api/v1';
 const COACHIO_API_KEY_STORAGE = 'coachio_api_key';
@@ -11,10 +12,31 @@ export function getCoachioApiKey(): string {
 
 export function setCoachioApiKey(key: string): void {
   localStorage.setItem(COACHIO_API_KEY_STORAGE, key);
+  // Best-effort sync to Supabase so the MCP server can call Coachio on the
+  // user's behalf. Fire-and-forget — don't block UI on this, but log warnings.
+  syncCoachioKeyToCloud(key).catch(e => console.warn('[coachio] DB sync failed', e));
 }
 
 export function removeCoachioApiKey(): void {
   localStorage.removeItem(COACHIO_API_KEY_STORAGE);
+  syncCoachioKeyToCloud(null).catch(e => console.warn('[coachio] DB clear failed', e));
+}
+
+/** Push the Coachio API key (or null to clear) to /api/user-keys so the
+ *  server-side MCP tool start_banner_gen can reuse it. */
+async function syncCoachioKeyToCloud(key: string | null): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return;  // not logged in yet — sync will happen on next save
+  await fetch('/api/user-keys', {
+    method: key == null ? 'DELETE' : 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: key == null ? undefined : JSON.stringify({ coachio_api_key: key }),
+  });
 }
 
 async function uploadImageToCoachio(file: File, apiKey: string): Promise<string> {
