@@ -248,15 +248,173 @@ const get_creative_draft: McpToolDef = {
   },
 };
 
+// ─────────────────── Write tools (Sprint D phase 2) ───────────────────
+
+const VALID_CTAS = [
+  'SHOP_NOW', 'LEARN_MORE', 'SIGN_UP', 'BUY_NOW', 'BOOK_TRAVEL',
+  'DOWNLOAD', 'CONTACT_US', 'GET_QUOTE', 'MESSAGE_PAGE', 'SUBSCRIBE',
+  'WATCH_MORE', 'GET_OFFER', 'INSTALL_MOBILE_APP', 'NO_BUTTON',
+];
+
+const save_creative_draft: McpToolDef = {
+  name: 'save_creative_draft',
+  description:
+    'Create a new ad creative draft in Banner Ads Pro. Bundles a banner ' +
+    '(by banner_id from list_banners) with headline + primary text + CTA + ' +
+    'destination URL. The draft appears immediately in the user\'s app. ' +
+    'Use after composing copy in chat — give the human a starting point to refine.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      banner_id: { type: 'string', description: 'Banner from list_banners (image source)' },
+      campaign_id: { type: 'string', description: 'Optional local Campaign id to attach to' },
+      adset_id:    { type: 'string', description: 'Optional local AdSet id to attach to' },
+      name: { type: 'string', description: 'Internal name (defaults to "MCP draft <timestamp>")' },
+      headline: { type: 'string', maxLength: 250 },
+      primary_text: { type: 'string', maxLength: 5000 },
+      description: { type: 'string', maxLength: 250 },
+      cta: { type: 'string', enum: VALID_CTAS, default: 'LEARN_MORE' },
+      destination_url: { type: 'string', format: 'uri' },
+      display_link: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['banner_id'],
+  },
+  requiredScopes: ['drafts:write'],
+  handler: async (args, ctx) => {
+    // Verify the banner belongs to the user before linking — prevents
+    // silently dropping a wrong/foreign banner id.
+    const banner = await supaSelectOne<any>('banner_history',
+      `id=eq.${args.banner_id}&user_id=eq.${ctx.userId}&select=id`);
+    if (!banner) return error(`Banner ${args.banner_id} not found or not owned by user`);
+
+    const id = newId();
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      user_id: ctx.userId,
+      campaign_id: args.campaign_id || null,
+      adset_id: args.adset_id || null,
+      name: args.name || `MCP draft ${new Date().toLocaleString('vi-VN')}`,
+      banner_id: args.banner_id,
+      primary_text: args.primary_text || null,
+      headline: args.headline || null,
+      description: args.description || null,
+      cta: args.cta || 'LEARN_MORE',
+      destination_url: args.destination_url || null,
+      display_link: args.display_link || null,
+      status: 'draft',
+      tags: args.tags || [],
+      source: 'agent',  // distinct from 'user' so the UI can mark "AI-created"
+      created_at: now,
+      updated_at: now,
+    };
+    const inserted = await supaPost('ad_creatives', row);
+    return textJson({
+      draft: {
+        id: inserted.id,
+        name: inserted.name,
+        banner_id: inserted.banner_id,
+        status: inserted.status,
+        created_at: inserted.created_at,
+      },
+      message: `Saved draft "${inserted.name}" — user can refine in Banner Ads Pro UI.`,
+    });
+  },
+};
+
+const update_creative_draft: McpToolDef = {
+  name: 'update_creative_draft',
+  description:
+    'Patch fields on an existing draft. Only pass the fields you want to ' +
+    'change — others stay the same. Use to refine copy without recreating.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      name: { type: 'string' },
+      headline: { type: 'string' },
+      primary_text: { type: 'string' },
+      description: { type: 'string' },
+      cta: { type: 'string', enum: VALID_CTAS },
+      destination_url: { type: 'string' },
+      display_link: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+      status: { type: 'string', enum: ['draft', 'ready', 'paused', 'archived'] },
+      campaign_id: { type: 'string' },
+      adset_id: { type: 'string' },
+    },
+    required: ['id'],
+  },
+  requiredScopes: ['drafts:write'],
+  handler: async (args, ctx) => {
+    // RLS-equivalent: ensure draft belongs to user before patch.
+    const existing = await supaSelectOne<any>('ad_creatives',
+      `id=eq.${args.id}&user_id=eq.${ctx.userId}&select=id,status`);
+    if (!existing) return error(`Creative draft ${args.id} not found or not owned by user`);
+
+    const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+    for (const k of [
+      'name', 'headline', 'primary_text', 'description', 'cta',
+      'destination_url', 'display_link', 'tags', 'status',
+      'campaign_id', 'adset_id',
+    ]) {
+      if (args[k] !== undefined) patch[k] = args[k];
+    }
+    if (Object.keys(patch).length === 1) return error('Nothing to update');
+
+    await supaPatch('ad_creatives', `id=eq.${args.id}`, patch);
+    return textJson({
+      updated: { id: args.id, patched_fields: Object.keys(patch).filter(k => k !== 'updated_at') },
+      message: `Updated draft ${args.id}`,
+    });
+  },
+};
+
+const delete_creative_draft: McpToolDef = {
+  name: 'delete_creative_draft',
+  description:
+    'Delete a creative draft permanently. Refuses to delete drafts that ' +
+    'have already been pushed to Meta (status=pushed / failed) — archive ' +
+    'those manually instead.',
+  inputSchema: {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+    required: ['id'],
+  },
+  requiredScopes: ['drafts:write'],
+  handler: async (args, ctx) => {
+    const existing = await supaSelectOne<any>('ad_creatives',
+      `id=eq.${args.id}&user_id=eq.${ctx.userId}&select=id,name,status,meta_ad_id`);
+    if (!existing) return error(`Creative draft ${args.id} not found`);
+    if (existing.meta_ad_id || ['pushed', 'failed'].includes(existing.status)) {
+      return error(
+        `Cannot delete draft "${existing.name}" — already pushed to Meta (ad ${existing.meta_ad_id || existing.status}). ` +
+        `Archive in the UI instead, or pause the ad on Meta first.`,
+      );
+    }
+    await supaDelete('ad_creatives', `id=eq.${args.id}`);
+    return textJson({
+      deleted: { id: args.id, name: existing.name },
+      message: `Deleted draft "${existing.name}".`,
+    });
+  },
+};
+
 // ─────────────────── Registry + helpers ───────────────────
 
 export const ALL_TOOLS: McpToolDef[] = [
+  // Read
   list_brand_styles,
   get_brand_style,
   list_banners,
   get_banner,
   list_creative_drafts,
   get_creative_draft,
+  // Write
+  save_creative_draft,
+  update_creative_draft,
+  delete_creative_draft,
 ];
 
 export function getTool(name: string): McpToolDef | undefined {
@@ -290,13 +448,59 @@ function error(msg: string): McpToolResult {
   };
 }
 
-// Internal supaSelect wrapper kept thin (Edge runtime, service role)
+// Internal Supabase REST wrappers (Edge runtime, service role).
+
+function supaHeaders(extra: HeadersInit = {}): HeadersInit {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    Prefer: 'return=representation',
+    ...extra,
+  };
+}
+
 async function supaSelect(table: string, filter: string): Promise<any[]> {
   const supaUrl = process.env.SUPABASE_URL!;
-  const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
   const res = await fetch(`${supaUrl}/rest/v1/${table}?${filter}`, {
-    headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+    headers: supaHeaders(),
   });
   if (!res.ok) throw new Error(`Supabase ${table} ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+async function supaPost(table: string, row: any): Promise<any> {
+  const supaUrl = process.env.SUPABASE_URL!;
+  const res = await fetch(`${supaUrl}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: supaHeaders(),
+    body: JSON.stringify(row),
+  });
+  if (!res.ok) throw new Error(`Supabase insert ${table} ${res.status}: ${await res.text()}`);
+  const arr = await res.json();
+  return Array.isArray(arr) ? arr[0] : arr;
+}
+
+async function supaPatch(table: string, filter: string, patch: any): Promise<void> {
+  const supaUrl = process.env.SUPABASE_URL!;
+  const res = await fetch(`${supaUrl}/rest/v1/${table}?${filter}`, {
+    method: 'PATCH',
+    headers: supaHeaders({ Prefer: 'return=minimal' }),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`Supabase patch ${table} ${res.status}: ${await res.text()}`);
+}
+
+async function supaDelete(table: string, filter: string): Promise<void> {
+  const supaUrl = process.env.SUPABASE_URL!;
+  const res = await fetch(`${supaUrl}/rest/v1/${table}?${filter}`, {
+    method: 'DELETE',
+    headers: supaHeaders({ Prefer: 'return=minimal' }),
+  });
+  if (!res.ok) throw new Error(`Supabase delete ${table} ${res.status}: ${await res.text()}`);
+}
+
+function newId(): string {
+  return Math.random().toString(36).substring(2, 8) + Date.now().toString(36);
 }
