@@ -244,6 +244,7 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate, initialTab }) => {
           <QueueTab
             creatives={creatives}
             campaigns={campaigns}
+            adSets={adSets}
             banners={banners}
             loading={loading}
             onEdit={setEditing}

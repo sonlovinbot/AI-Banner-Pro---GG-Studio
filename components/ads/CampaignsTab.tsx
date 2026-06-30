@@ -24,7 +24,8 @@ import {
 } from '../../services/adSetService';
 import { proxiedBannerUrl } from '../../services/cdnProxy';
 import { Image as ImageIcon, CheckCircle, RefreshCw, ExternalLink } from 'lucide-react';
-import { readMetaCache, syncStatusesFromMeta, mapMetaStatusToApp } from '../../services/metaFetchService';
+import { readMetaCache } from '../../services/metaFetchService';
+import { syncCampaign } from '../../services/metaSyncService';
 import type { PushResult } from '../../services/metaPushClient';
 
 interface Props {
@@ -86,63 +87,17 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
 
   const handleSyncStatus = async (c: AdCampaign) => {
     if (!c.metaCampaignId) return;
-    const account = metaAccounts.find(a => a.id === c.metaAccountRefId);
-    const accountId = account?.accountId || c.metaAccountId || '';
-    if (!accountId) { setSyncMsg('Campaign chưa link Meta Account.'); return; }
-
-    const cAdsets = adSets.filter(a => a.campaignId === c.id && a.metaAdSetId);
-    const cCreatives = creatives.filter(cr => cr.campaignId === c.id && cr.metaAdId);
     setSyncing(c.id);
     setSyncMsg(null);
     try {
-      const report = await syncStatusesFromMeta({
-        accountId,
-        metaCampaignId: c.metaCampaignId,
-        metaAdsetIds: cAdsets.map(a => a.metaAdSetId!),
-        metaAdIds: cCreatives.map(cr => cr.metaAdId!),
-      });
-
-      let touched = 0;
-
-      const campaignStatus = mapMetaStatusToApp(report.campaign?.effectiveStatus || report.campaign?.status);
-      if (campaignStatus && campaignStatus !== c.status) {
-        await saveCampaignToCloud({ ...c, status: campaignStatus, updatedAt: Date.now() });
-        touched++;
-      }
-
-      for (const r of report.adsets) {
-        const local = cAdsets.find(a => a.metaAdSetId === r.id);
-        if (!local) continue;
-        const mapped = mapMetaStatusToApp(r.effectiveStatus || r.status);
-        if (mapped && mapped !== local.status) {
-          await saveAdSetToCloud({ ...local, status: mapped, updatedAt: Date.now() });
-          touched++;
-        }
-      }
-
-      for (const r of report.ads) {
-        const local = cCreatives.find(cr => cr.metaAdId === r.id);
-        if (!local) continue;
-        const mapped = mapMetaStatusToApp(r.effectiveStatus || r.status);
-        // AdCreative.status uses an extended enum (pushed/failed/...) so we
-        // only override when Meta says paused/archived — leave `pushed` rows
-        // alone when Meta still reports ACTIVE.
-        if (mapped === 'paused' || mapped === 'archived') {
-          if (mapped !== local.status) {
-            const { saveCreativeToCloud } = await import('../../services/adCreativeService');
-            await saveCreativeToCloud({ ...local, status: mapped as any, updatedAt: Date.now() });
-            touched++;
-          }
-        }
-      }
-
+      const summary = await syncCampaign(c, adSets, creatives, metaAccounts);
+      if (summary.skipped) { setSyncMsg(`Bỏ qua: ${summary.skipped}.`); return; }
+      if (summary.error)   { setSyncMsg(`Sync lỗi: ${summary.error}`); return; }
       await Promise.all([onRefresh(), refreshAdSets()]);
-      setSyncMsg(touched > 0
-        ? `Sync xong — đã cập nhật ${touched} thực thể từ Meta.`
+      setSyncMsg(summary.touched > 0
+        ? `Sync xong — đã cập nhật ${summary.touched} thực thể từ Meta.`
         : 'Sync xong — không có thay đổi nào (đã đồng bộ).');
       setTimeout(() => setSyncMsg(null), 6_000);
-    } catch (e: any) {
-      setSyncMsg(`Sync lỗi: ${e?.message || e}`);
     } finally {
       setSyncing(null);
     }

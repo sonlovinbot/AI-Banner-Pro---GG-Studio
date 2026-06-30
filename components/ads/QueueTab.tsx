@@ -1,15 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Send, Edit3, Trash2, Copy, CheckCircle, PauseCircle, PlayCircle,
-  ArrowRight, Archive, RotateCw, AlertCircle, Megaphone, Loader2,
+  ArrowRight, Archive, RotateCw, AlertCircle, Megaphone, Loader2, RefreshCw,
 } from 'lucide-react';
-import { AdCreative, AdCreativeStatus, AdCampaign, HistoryItem } from '../../types';
+import { AdCreative, AdCreativeStatus, AdCampaign, AdSet, HistoryItem, MetaAccount } from '../../types';
 import { saveCreativeToCloud, deleteCreativeFromCloud } from '../../services/adCreativeService';
 import { proxiedBannerUrl } from '../../services/cdnProxy';
+import { listMetaAccountsFromCloud, MetaAccountsSetupRequiredError } from '../../services/metaAccountsService';
+import { syncAllPushedCampaigns, SyncSummary } from '../../services/metaSyncService';
 
 interface Props {
   creatives: AdCreative[];
   campaigns: AdCampaign[];
+  adSets: AdSet[];
   banners: HistoryItem[];
   loading: boolean;
   onEdit: (c: AdCreative) => void;
@@ -29,12 +32,40 @@ const COLUMNS: { id: ColumnId; label: string; sub: string; dotVar: string }[] = 
   { id: 'failed',  label: 'Failed',  sub: 'lỗi push hoặc Meta reject', dotVar: 'var(--danger-fg)' },
 ];
 
-export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loading, onEdit, onRefresh }) => {
+export const QueueTab: React.FC<Props> = ({ creatives, campaigns, adSets, banners, loading, onEdit, onRefresh }) => {
   const [working, setWorking] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<AdCreativeStatus | null>(null);
+  const [metaAccounts, setMetaAccounts] = useState<MetaAccount[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<{ touched: number; total: number; errs: string[] } | null>(null);
+
+  useEffect(() => {
+    listMetaAccountsFromCloud()
+      .then(setMetaAccounts)
+      .catch(e => {
+        if (!(e instanceof MetaAccountsSetupRequiredError)) console.warn('metaAccounts load failed', e);
+      });
+  }, []);
+
+  const pushedCount = campaigns.filter(c => c.metaCampaignId).length;
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    setSyncSummary(null);
+    try {
+      const results: SyncSummary[] = await syncAllPushedCampaigns(campaigns, adSets, creatives, metaAccounts);
+      const touched = results.reduce((s, r) => s + r.touched, 0);
+      const errs = results.filter(r => r.error).map(r => `${r.campaignName}: ${r.error}`);
+      await onRefresh();
+      setSyncSummary({ touched, total: results.length, errs });
+      if (errs.length === 0) setTimeout(() => setSyncSummary(null), 6_000);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const onDragStart = (e: React.DragEvent, c: AdCreative) => {
     e.dataTransfer.setData('text/plain', c.id);
@@ -125,10 +156,21 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loadi
             Push Queue
           </h2>
           <p className="text-[11px] text-subtle">
-            Sprint 4 · Push thực tế lên Meta sẽ qua MCP server (Pipeboard). Hiện tại đổi status thủ công để track.
+            Push thực tế lên Meta qua MCP server (Pipeboard). Local status có thể lệch khi user pause/edit trực tiếp trên Meta — bấm "Sync from Meta" để pull về.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {pushedCount > 0 && (
+            <button
+              onClick={handleSyncAll}
+              disabled={syncing}
+              className="text-xs bg-brand hover:bg-brand-dark text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium disabled:opacity-50"
+              title={`Pull status của ${pushedCount} campaign đã push (tốn ~${pushedCount * 4} Pipeboard call)`}
+            >
+              {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+              Sync from Meta ({pushedCount})
+            </button>
+          )}
           {archived.length > 0 && (
             <button
               onClick={() => setShowArchived(s => !s)}
@@ -139,6 +181,21 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, banners, loadi
           )}
         </div>
       </div>
+
+      {syncSummary && (
+        <div className={`text-xs px-3 py-2 rounded-lg border ${
+          syncSummary.errs.length > 0 ? 'status-warning' : 'status-info'
+        }`}>
+          Sync xong {syncSummary.total} campaign — cập nhật <b>{syncSummary.touched}</b> thực thể từ Meta.
+          {syncSummary.errs.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {syncSummary.errs.slice(0, 3).map((e, i) => (
+                <li key={i} className="opacity-90 truncate">⚠ {e}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-danger-soft border border-danger-fg/40 text-danger text-xs px-3 py-2 rounded flex items-center gap-2">
