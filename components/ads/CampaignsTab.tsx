@@ -944,6 +944,27 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, metaAccounts
   }, [campaign?.metaAccountRefId, metaAccounts]);
   const cache = useMemo(() => readMetaCache(resolvedAccount?.accountId || ''), [resolvedAccount?.accountId]);
 
+  /** When the user picks a goal that requires a Pixel + Event, auto-fill sane
+   *  defaults so they don't have to manually pick from the obvious choice. */
+  const handleGoalChange = (newGoal: MetaOptimizationGoal | undefined) => {
+    setDraft(prev => {
+      const next = { ...prev, optimizationGoal: newGoal };
+      const obj = campaign?.objective;
+      const needsPixel =
+        (obj === 'OUTCOME_SALES' && (newGoal === 'OFFSITE_CONVERSIONS' || newGoal === 'VALUE')) ||
+        (obj === 'OUTCOME_LEADS' && (newGoal === 'OFFSITE_CONVERSIONS' || newGoal === 'QUALITY_LEAD'));
+      if (needsPixel) {
+        if (!next.promotedPixelId && cache.pixels && cache.pixels.length > 0) {
+          next.promotedPixelId = cache.pixels[0].id;
+        }
+        if (!next.promotedCustomEventType) {
+          next.promotedCustomEventType = obj === 'OUTCOME_SALES' ? 'PURCHASE' : 'LEAD';
+        }
+      }
+      return next;
+    });
+  };
+
   const goalOptions = validOptimizationGoals(campaign?.objective, draft.destinationType);
   const cboOn = !!campaign?.useCBO;
 
@@ -1020,7 +1041,7 @@ const AdSetEditor: React.FC<AdSetEditorProps> = ({ adSet, campaign, metaAccounts
           <Field label="Optimization goal *">
             <select
               value={draft.optimizationGoal || ''}
-              onChange={(e) => update('optimizationGoal', (e.target.value as MetaOptimizationGoal) || undefined)}
+              onChange={(e) => handleGoalChange((e.target.value as MetaOptimizationGoal) || undefined)}
               disabled={goalOptions.length === 0}
               className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand disabled:opacity-50"
             >

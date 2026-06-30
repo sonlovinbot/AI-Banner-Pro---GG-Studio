@@ -10,6 +10,8 @@ import {
 } from '../../services/metaPushPayload';
 import { pushCampaign, PushResult, PushStepResult, EndpointUnavailableError } from '../../services/metaPushClient';
 import { saveCreativeToCloud } from '../../services/adCreativeService';
+import { saveAdSetToCloud } from '../../services/adSetService';
+import { readMetaCache } from '../../services/metaFetchService';
 
 interface Props {
   campaign: AdCampaign;
@@ -61,23 +63,83 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
     }
   };
 
-  /** Batch auto-fix: every fixable issue gets applied in sequence. */
+  /** Resolve cached Pixel + suggested Event Type for the campaign's account. */
+  const adsetPixelDefaults = useMemo(() => {
+    const account = metaAccounts.find(a => a.id === campaign.metaAccountRefId);
+    const accountId = account?.accountId || campaign.metaAccountId || '';
+    if (!accountId) return null;
+    const cache = readMetaCache(accountId);
+    const pixel = cache.pixels?.[0];
+    if (!pixel) return null;
+    const eventType = campaign.objective === 'OUTCOME_SALES' ? 'PURCHASE' : 'LEAD';
+    return { pixelId: pixel.id, pixelName: pixel.name, eventType };
+  }, [campaign.metaAccountRefId, campaign.metaAccountId, campaign.objective, metaAccounts]);
+
+  /** Auto-fix: fill missing promotedPixelId + promotedCustomEventType on an adset. */
+  const handleAutoFixAdsetPixel = async (adsetId: string) => {
+    if (!adsetPixelDefaults) {
+      setFixToast('Chưa cache pixel cho account. Vào Settings → Meta Accounts → Fetch.');
+      setTimeout(() => setFixToast(null), 4000);
+      return;
+    }
+    const a = adSets.find(x => x.id === adsetId);
+    if (!a) return;
+    setFixing(adsetId);
+    setFixToast(null);
+    try {
+      await saveAdSetToCloud({
+        ...a,
+        promotedPixelId: a.promotedPixelId || adsetPixelDefaults.pixelId,
+        promotedCustomEventType: a.promotedCustomEventType || adsetPixelDefaults.eventType,
+        updatedAt: Date.now(),
+      });
+      setFixToast(`Đã fill Pixel "${adsetPixelDefaults.pixelName}" + Event ${adsetPixelDefaults.eventType} cho "${a.name}"`);
+      if (onRefresh) await onRefresh();
+      setTimeout(() => setFixToast(null), 3500);
+    } catch (e: any) {
+      setFixToast(`Fix lỗi: ${e?.message || e}`);
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  /** Batch auto-fix: applies every fixable issue. Handles two kinds today:
+   *    1. Creative chưa gán Ad Set → gán Ad Set đầu tiên
+   *    2. Ad set thiếu Pixel/Event Type → điền pixel cached + event suy ra từ objective */
   const handleAutoFixAll = async () => {
     setFixing('all');
     setFixToast(null);
     try {
       let count = 0;
+      const fixedAdsets = new Set<string>();
       for (const i of report.issues) {
         if (i.fix?.type === 'auto-assign-adset') {
           const c = creatives.find(x => x.id === i.fix.creativeId);
           if (!c) continue;
           await saveCreativeToCloud({ ...c, adsetId: i.fix.adsetId, updatedAt: Date.now() });
           count++;
+        } else if (
+          i.fix?.type === 'edit-adset' && i.scope === 'adset' &&
+          (i.field === 'promotedPixelId' || i.field === 'promotedCustomEventType') &&
+          adsetPixelDefaults && !fixedAdsets.has(i.fix.adsetId)
+        ) {
+          const a = adSets.find(x => x.id === i.fix.adsetId);
+          if (!a) continue;
+          await saveAdSetToCloud({
+            ...a,
+            promotedPixelId: a.promotedPixelId || adsetPixelDefaults.pixelId,
+            promotedCustomEventType: a.promotedCustomEventType || adsetPixelDefaults.eventType,
+            updatedAt: Date.now(),
+          });
+          fixedAdsets.add(i.fix.adsetId);
+          count++;
         }
       }
       if (onRefresh) await onRefresh();
-      setFixToast(count > 0 ? `Đã sửa ${count} creative tự động` : 'Không có lỗi nào tự sửa được');
-      setTimeout(() => setFixToast(null), 3500);
+      setFixToast(count > 0
+        ? `Đã tự sửa ${count} mục (creatives + adsets).`
+        : 'Không có lỗi nào tự sửa được — kiểm tra cache pixel hoặc fix tay.');
+      setTimeout(() => setFixToast(null), 4000);
     } catch (e: any) {
       setFixToast(`Fix lỗi: ${e?.message || e}`);
     } finally {
@@ -107,10 +169,17 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
       setPushResult(result);
       // Always switch to Result tab — success OR partial failure with steps.
       setTab('result');
-      // Surface the result upward regardless of success — caller shows a toast
-      // so the user sees what happened even after closing the modal.
-      if (!dryRun && onPushed) {
+      // Only surface a top-level toast when the server actually attempted a
+      // Meta push (mode='push'). If validation blocked the push server-side,
+      // mode comes back as 'dry-run' and the result has no steps — toast
+      // would read "0 step failed, 0 OK" which is meaningless. Stay in the
+      // modal so the user can fix the validation errors.
+      if (!dryRun && onPushed && result.mode === 'push') {
         await onPushed(result);
+      } else if (!dryRun && result.mode === 'dry-run') {
+        // Real-push attempt blocked by server validation → show error inline
+        setPushError('Server validate chưa pass — sửa các lỗi ở tab Validation, lưu, rồi push lại.');
+        setTab('validation');
       }
     } catch (e: any) {
       // If Edge function is not deployed (Vite dev mode), fall back to local
@@ -208,7 +277,25 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
             <ValidationView
               issues={report.issues}
               fixingId={fixing}
-              autoFixableCount={report.issues.filter(i => i.fix?.type === 'auto-assign-adset').length}
+              autoFixableCount={(() => {
+                const adsets = new Set<string>();
+                let n = 0;
+                for (const i of report.issues) {
+                  if (i.fix?.type === 'auto-assign-adset') n++;
+                  else if (
+                    i.fix?.type === 'edit-adset' && i.scope === 'adset' &&
+                    (i.field === 'promotedPixelId' || i.field === 'promotedCustomEventType') &&
+                    adsetPixelDefaults && !adsets.has(i.fix.adsetId)
+                  ) { adsets.add(i.fix.adsetId); n++; }
+                }
+                return n;
+              })()}
+              canAutoFixAdsetPixel={(field, adsetId) =>
+                !!adsetPixelDefaults &&
+                (field === 'promotedPixelId' || field === 'promotedCustomEventType') &&
+                !!adsetId
+              }
+              onAutoFixAdsetPixel={handleAutoFixAdsetPixel}
               onAutoFixAll={handleAutoFixAll}
               onAutoAssignAdset={handleAutoAssignAdset}
               onEditCreative={handleEditCreativeClick}
@@ -288,11 +375,13 @@ const ValidationView: React.FC<{
   issues: ValidationIssue[];
   fixingId: string | null;
   autoFixableCount: number;
+  canAutoFixAdsetPixel: (field: string, adsetId: string) => boolean;
+  onAutoFixAdsetPixel: (adsetId: string) => void;
   onAutoFixAll: () => void;
   onAutoAssignAdset: (creativeId: string, adsetId: string) => void;
   onEditCreative: (creativeId: string) => void;
   onEditAdSet: (adsetId: string) => void;
-}> = ({ issues, fixingId, autoFixableCount, onAutoFixAll, onAutoAssignAdset, onEditCreative, onEditAdSet }) => {
+}> = ({ issues, fixingId, autoFixableCount, canAutoFixAdsetPixel, onAutoFixAdsetPixel, onAutoFixAll, onAutoAssignAdset, onEditCreative, onEditAdSet }) => {
   if (issues.length === 0) {
     return (
       <div className="py-16 text-center">
@@ -323,7 +412,7 @@ const ValidationView: React.FC<{
           <div className="flex-1 text-sm">
             <p className="font-semibold">{autoFixableCount} lỗi có thể tự sửa</p>
             <p className="text-xs opacity-80">
-              Creative chưa gán Ad Set → tự gán vào Ad Set đầu tiên của campaign
+              Creative chưa gán Ad Set → tự gán Ad Set đầu tiên · Ad Set thiếu Pixel/Event → fill từ cache + objective
             </p>
           </div>
           <button
@@ -379,13 +468,26 @@ const ValidationView: React.FC<{
                   </button>
                 )}
                 {i.fix?.type === 'edit-adset' && (
-                  <button
-                    onClick={() => onEditAdSet((i.fix as any).adsetId)}
-                    className="text-xs bg-canvas hover:bg-raised text-fg border border-line-strong px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0"
-                    title="Mở AdSet Editor để sửa"
-                  >
-                    <Edit3 size={11} /> Sửa AdSet
-                  </button>
+                  <>
+                    {canAutoFixAdsetPixel(i.field, (i.fix as any).adsetId) && (
+                      <button
+                        onClick={() => onAutoFixAdsetPixel((i.fix as any).adsetId)}
+                        disabled={fixingId === (i.fix as any).adsetId || fixingId === 'all'}
+                        className="text-xs bg-brand hover:bg-brand-dark text-white px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0 disabled:opacity-50"
+                        title="Tự fill Pixel + Event Type từ cache + objective"
+                      >
+                        {fixingId === (i.fix as any).adsetId ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                        Tự sửa
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onEditAdSet((i.fix as any).adsetId)}
+                      className="text-xs bg-canvas hover:bg-raised text-fg border border-line-strong px-2.5 py-1.5 rounded-md font-medium flex items-center gap-1 shrink-0"
+                      title="Mở AdSet Editor để sửa tay"
+                    >
+                      <Edit3 size={11} /> Sửa tay
+                    </button>
+                  </>
                 )}
 
                 <span className={`text-xs font-mono px-2 py-0.5 rounded-md border shrink-0 ${
