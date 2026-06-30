@@ -74,7 +74,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, use
             <Wand2 size={18} />
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-fg">AI Banner Pro</h1>
+            <h1 className="text-base font-bold tracking-tight text-fg">Banner Ads Pro</h1>
             <p className="text-[10px] font-mono text-subtle">v{APP_VERSION}</p>
           </div>
         </button>

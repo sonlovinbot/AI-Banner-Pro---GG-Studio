@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Plus, ChevronRight, ChevronDown, Edit3, Trash2, Loader2, AlertCircle,
-  Layers, Target, X, Clipboard, Copy, Save, Sparkles, Send,
+  Layers, Target, X, Clipboard, Copy as CopyIcon, Save, Sparkles, Send,
 } from 'lucide-react';
 import {
   AdCampaign, AdCampaignObjective, AdCampaignStatus, AdSet, AdSetStatus,
@@ -26,6 +26,7 @@ import { proxiedBannerUrl } from '../../services/cdnProxy';
 import { Image as ImageIcon, CheckCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import { readMetaCache } from '../../services/metaFetchService';
 import { syncCampaign } from '../../services/metaSyncService';
+import { cloneCampaign, cloneAdSet } from '../../services/cloneService';
 import type { PushResult } from '../../services/metaPushClient';
 
 interface Props {
@@ -82,6 +83,46 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
     // Auto-dismiss success toast after 12s; keep failure toast until user closes.
     if (result.success) {
       setTimeout(() => setPushToast(prev => (prev === result ? null : prev)), 12_000);
+    }
+  };
+
+  const [cloneToast, setCloneToast] = useState<string | null>(null);
+
+  const handleCloneCampaign = async (c: AdCampaign) => {
+    const ok = confirm(
+      `Clone campaign "${c.name}"?\n` +
+      `Sẽ copy luôn ${adSetsByCampaign[c.id]?.length || 0} adset + creatives bên trong (status='draft').`,
+    );
+    if (!ok) return;
+    setWorking(c.id);
+    try {
+      const result = await cloneCampaign(c, { allAdSets: adSets, allCreatives: creatives });
+      await Promise.all([onRefresh(), refreshAdSets()]);
+      setCloneToast(`Đã clone "${result.campaign.name}" — ${result.adSets.length} adset + ${result.creatives.length} creative.`);
+      setTimeout(() => setCloneToast(null), 5000);
+    } catch (e: any) {
+      setError(`Clone lỗi: ${e?.message || e}`);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const handleCloneAdSet = async (a: AdSet) => {
+    const inSet = creatives.filter(cr => cr.adsetId === a.id);
+    const ok = confirm(
+      `Clone ad set "${a.name}"?\nSẽ copy luôn ${inSet.length} creative (status='draft').`,
+    );
+    if (!ok) return;
+    setWorking(a.id);
+    try {
+      const result = await cloneAdSet(a, { allCreatives: creatives });
+      await Promise.all([onRefresh(), refreshAdSets()]);
+      setCloneToast(`Đã clone "${result.adSet.name}" — ${result.creatives.length} creative.`);
+      setTimeout(() => setCloneToast(null), 5000);
+    } catch (e: any) {
+      setError(`Clone lỗi: ${e?.message || e}`);
+    } finally {
+      setWorking(null);
     }
   };
 
@@ -239,6 +280,11 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
           {syncMsg}
         </div>
       )}
+      {cloneToast && (
+        <div className="text-sm px-3 py-2 rounded-lg border status-success flex items-center gap-2">
+          <CopyIcon size={14} /> {cloneToast}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-fg flex items-center gap-2">
@@ -357,6 +403,14 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                     <Edit3 size={12} />
                   </button>
                   <button
+                    onClick={() => handleCloneCampaign(c)}
+                    disabled={working === c.id}
+                    className="text-muted hover:text-fg p-1.5 rounded hover:bg-raised disabled:opacity-50"
+                    title="Clone campaign (kèm adset + creative)"
+                  >
+                    <CopyIcon size={12} />
+                  </button>
+                  <button
                     onClick={() => handleDeleteCampaign(c)}
                     disabled={working === c.id}
                     className="text-muted hover:text-danger p-1.5 rounded hover:bg-danger-soft"
@@ -420,6 +474,14 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                                 <Edit3 size={11} />
                               </button>
                               <button
+                                onClick={() => handleCloneAdSet(a)}
+                                disabled={working === a.id}
+                                className="text-muted hover:text-fg p-1 rounded hover:bg-raised disabled:opacity-50"
+                                title="Clone ad set (kèm creative)"
+                              >
+                                <CopyIcon size={11} />
+                              </button>
+                              <button
                                 onClick={() => handleDeleteAdSet(a)}
                                 disabled={working === a.id}
                                 className="text-muted hover:text-danger p-1 rounded hover:bg-danger-soft"
@@ -439,18 +501,37 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                                     {aCreatives.map(cr => {
                                       const cb = bannerById(cr.bannerId);
                                       return (
-                                        <button
-                                          key={cr.id}
-                                          onClick={() => onEditCreative(cr)}
-                                          className="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded hover:bg-raised/40 transition-colors"
-                                        >
-                                          <Thumb item={cb} size={24} />
-                                          <span className="text-xs text-fg truncate flex-1">
-                                            {cr.name || cr.headline || cr.id.slice(0, 8)}
-                                          </span>
-                                          <StatusDot status={cr.status as any} />
-                                          <span className="text-[10px] text-subtle font-mono">{cr.cta || '—'}</span>
-                                        </button>
+                                        <div key={cr.id} className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-raised/40 transition-colors">
+                                          <button
+                                            onClick={() => onEditCreative(cr)}
+                                            className="flex items-center gap-2 text-left flex-1 min-w-0"
+                                          >
+                                            <Thumb item={cb} size={24} />
+                                            <span className="text-xs text-fg truncate flex-1">
+                                              {cr.name || cr.headline || cr.id.slice(0, 8)}
+                                            </span>
+                                            <StatusDot status={cr.status as any} />
+                                            <span className="text-[10px] text-subtle font-mono">{cr.cta || '—'}</span>
+                                          </button>
+                                          <button
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              try {
+                                                const { cloneCreative } = await import('../../services/cloneService');
+                                                await cloneCreative(cr);
+                                                await onRefresh();
+                                                setCloneToast(`Đã clone creative "${cr.name || cr.id.slice(0,8)}".`);
+                                                setTimeout(() => setCloneToast(null), 4000);
+                                              } catch (err: any) {
+                                                setError(`Clone lỗi: ${err?.message || err}`);
+                                              }
+                                            }}
+                                            className="opacity-0 group-hover:opacity-100 text-muted hover:text-fg p-1 rounded hover:bg-raised transition-opacity"
+                                            title="Clone creative (cùng adset)"
+                                          >
+                                            <CopyIcon size={11} />
+                                          </button>
+                                        </div>
                                       );
                                     })}
                                   </div>

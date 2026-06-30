@@ -118,7 +118,7 @@ const LoginScreen: React.FC = () => {
           <div className="inline-flex items-center justify-center bg-brand text-white p-3 rounded-xl border-2 border-fg/10 shadow-pop mb-3">
             <Wand2 size={22} />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">AI Banner Pro</h1>
+          <h1 className="text-xl font-bold tracking-tight">Banner Ads Pro</h1>
           <p className="text-[11px] text-subtle font-mono mt-0.5">
             v{APP_VERSION} · {APP_VERSION_NAME}
           </p>
