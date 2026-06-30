@@ -29,8 +29,10 @@ import {
 import {
   inventoryLocalStorage, clearGroups, formatBytes, StorageReport, StorageGroupId,
 } from '../services/storageCleanupService';
+import { isAdmin } from '../services/adminAuth';
+import { AdminRefBannersPanel } from './AdminRefBannersPanel';
 
-type SettingsTab = 'profile' | 'keys' | 'meta' | 'storage';
+type SettingsTab = 'profile' | 'keys' | 'meta' | 'storage' | 'admin-refs';
 
 interface Props {
   user?: User;
@@ -72,6 +74,9 @@ export const ProfileSettingsModal: React.FC<Props> = ({ user, onClose, initialTa
               { id: 'keys' as const,    label: 'API Keys',      icon: <Key size={12} /> },
               { id: 'meta' as const,    label: 'Meta Accounts', icon: <Megaphone size={12} /> },
               { id: 'storage' as const, label: 'Lưu trữ',       icon: <HardDrive size={12} /> },
+              ...(isAdmin(user) ? [
+                { id: 'admin-refs' as const, label: 'Refs (Admin)', icon: <Sparkles size={12} /> },
+              ] : []),
             ] as { id: SettingsTab; label: string; icon: React.ReactNode }[]).map(t => (
               <button
                 key={t.id}
@@ -92,6 +97,7 @@ export const ProfileSettingsModal: React.FC<Props> = ({ user, onClose, initialTa
           {tab === 'keys'    && <KeysSection />}
           {tab === 'meta'    && <MetaAccountsSection />}
           {tab === 'storage' && <StorageSection />}
+          {tab === 'admin-refs' && isAdmin(user) && <AdminRefBannersPanel />}
         </div>
       </div>
     </div>

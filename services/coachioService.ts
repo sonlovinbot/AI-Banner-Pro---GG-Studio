@@ -152,7 +152,12 @@ export async function generateBannerWithCoachio(
   resolution: string,
   modelIdentifier: string,
   onProgress?: (status: string) => void,
-  extraReferences: UploadedImage[] = []
+  extraReferences: UploadedImage[] = [],
+  /** Pre-uploaded image URLs (e.g. admin curated refs from Bunny CDN) —
+   *  passed straight through to Coachio without re-uploading. */
+  extraReferenceUrls: string[] = [],
+  /** Optional text guidance appended to the prompt (used for admin ref insights). */
+  promptHint?: string,
 ): Promise<string> {
   const apiKey = getCoachioApiKey();
   if (!apiKey) {
@@ -176,20 +181,24 @@ export async function generateBannerWithCoachio(
     }
   }
 
+  // Pre-uploaded URLs (admin refs) — no upload step needed.
+  const allExtras = [...extraUrls, ...extraReferenceUrls];
+
   const fullPrompt = [
     'You are an expert graphic designer.',
     'Create a high-quality professional advertising banner.',
     'Follow the composition, color palette, lighting, and typography style of the reference image.',
     'Seamlessly integrate the product as the main focus.',
-    extraUrls.length > 0
-      ? `Additional reference images (${extraUrls.length}) follow the product — use them as supplementary style cues from approved past work or user tweaks.`
+    allExtras.length > 0
+      ? `Additional reference images (${allExtras.length}) follow the product — use them as supplementary style cues from approved past work or curated templates.`
       : '',
     brandContent ? `Brand Messaging: ${brandContent}` : '',
     userPrompt || 'Make it look high-end and commercial.',
+    promptHint || '',
   ].filter(Boolean).join('\n');
 
   onProgress?.('Submitting task...');
-  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl, ...extraUrls], aspectRatio, resolution, modelIdentifier, apiKey);
+  const taskId = await submitTask(fullPrompt, [refUrl, prodUrl, ...allExtras], aspectRatio, resolution, modelIdentifier, apiKey);
 
   onProgress?.('Generating...');
   const outputUrls = await pollTaskStatus(taskId, apiKey, onProgress);

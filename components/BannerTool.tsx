@@ -6,6 +6,10 @@ import { ResultViewer } from './ResultViewer';
 import { generateBannerWithGemini } from '../services/geminiService';
 import { generateBannerWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
+  RefCategory, RefBanner,
+  listRefCategories, listRefBanners, insightsToPromptHint,
+} from '../services/refBannersService';
+import {
   getGeminiApiKey,
   getActiveBackend,
   setActiveBackend,
@@ -145,6 +149,22 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [generationProgress, setGenerationProgress] = useState<Record<string, string>>({});
   const [refLibrary, setRefLibrary] = useState<LibraryImage[]>([]);
   const [prodLibrary, setProdLibrary] = useState<LibraryImage[]>([]);
+
+  // Industry / category curated refs — admin uploads → user picks ngành →
+  // hệ thống tự append refs đó vào extra references khi gen.
+  const [industries, setIndustries] = useState<RefCategory[]>([]);
+  const [selectedIndustry, setSelectedIndustry] = useState<string>('');
+  const [industryRefs, setIndustryRefs] = useState<RefBanner[]>([]);
+  const [industryRefLimit, setIndustryRefLimit] = useState<number>(2);
+
+  React.useEffect(() => {
+    listRefCategories().then(setIndustries).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    if (!selectedIndustry) { setIndustryRefs([]); return; }
+    listRefBanners(selectedIndustry).then(setIndustryRefs).catch(() => setIndustryRefs([]));
+  }, [selectedIndustry]);
 
   // Migrate counts surfaced in case user has legacy localStorage items
   const localRefCount = getLibrary('ref').length;
@@ -426,12 +446,21 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     let imageUrl: string;
     const brandContentToUse = contentForThis ?? brandContent;
 
+    // Industry refs: pick first N admin-curated banners for the selected
+    // industry and pass their URLs + insights through to Coachio so the
+    // gen is steered toward the curated template language.
+    const adminRefs = industryRefs.slice(0, industryRefLimit);
+    const adminRefUrls = adminRefs.map(r => r.imageUrl);
+    const adminInsightHint = insightsToPromptHint(adminRefs);
+
     if (backend === 'coachio') {
       imageUrl = await generateBannerWithCoachio(
         selectedRef, selectedProd, combinedPrompt, brandContentToUse,
         aspectRatio, imageSize, coachioModel,
         (status) => setGenerationProgress(prev => ({ ...prev, [placeholder.id]: status })),
         extraReferences,
+        adminRefUrls,
+        adminInsightHint || undefined,
       );
     } else {
       imageUrl = await generateBannerWithGemini(
@@ -701,6 +730,60 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               >
                 Thêm key
               </button>
+            </div>
+          )}
+
+          {/* Industry picker — auto-loads admin curated ref banners */}
+          {industries.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-2">
+                Ngành / Loại banner
+              </h2>
+              <div className="space-y-2">
+                <select
+                  value={selectedIndustry}
+                  onChange={(e) => setSelectedIndustry(e.target.value)}
+                  className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
+                >
+                  <option value="">— Không dùng template ngành —</option>
+                  {industries.map(c => (
+                    <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
+                  ))}
+                </select>
+                {selectedIndustry && industryRefs.length === 0 && (
+                  <p className="text-[11px] text-subtle">
+                    Ngành này chưa có ref banner — gen sẽ chỉ dùng refs của bạn.
+                  </p>
+                )}
+                {industryRefs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-muted">
+                        Hệ thống nạp <b>{Math.min(industryRefLimit, industryRefs.length)}</b> / {industryRefs.length} ref + insights
+                      </p>
+                      <select
+                        value={industryRefLimit}
+                        onChange={(e) => setIndustryRefLimit(Number(e.target.value))}
+                        className="text-[10px] bg-canvas border border-line rounded px-1 py-0.5"
+                      >
+                        {[1, 2, 3].map(n => (
+                          <option key={n} value={n}>{n} ref</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {industryRefs.slice(0, industryRefLimit).map(r => (
+                        <div key={r.id} className="aspect-square rounded border border-line overflow-hidden bg-canvas relative" title={r.label || ''}>
+                          <img src={r.imageUrl} className="w-full h-full object-cover" alt="" />
+                          {r.insights && (
+                            <span className="absolute top-0.5 right-0.5 text-[8px] bg-brand text-white px-1 rounded" title="Có insights AI">AI</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
