@@ -9,6 +9,8 @@ import {
   RefCategory, RefBanner,
   listRefCategories, listRefBanners, insightsToPromptHint,
 } from '../services/refBannersService';
+import { BrandBrief } from '../types';
+import { listSelectedBriefsForBrand } from '../services/brandBriefService';
 import {
   getGeminiApiKey,
   getActiveBackend,
@@ -133,6 +135,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [bannerType, setBannerType] = useState<BannerType>('general');
   const [multiContent, setMultiContent] = useState<boolean>(false);
   const [contents, setContents] = useState<string[]>([""]);
+  // Brand briefs auto-loaded when multi-mode + brand picked. User can toggle
+  // per-brief which to use as content variants in the gen plan.
+  const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
+  const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
   const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
@@ -195,6 +201,18 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     listSnippetsFromCloud().then(setBrandLibrary).catch(() => {});
     listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {});
   }, []);
+
+  // Auto-load brand's selected briefs when a brand is applied. Default all
+  // enabled — user can untick per-brief if they don't want it in this run.
+  React.useEffect(() => {
+    if (!activeBrandId) { setBrandBriefs([]); setEnabledBriefIds(new Set()); return; }
+    listSelectedBriefsForBrand(activeBrandId)
+      .then(b => {
+        setBrandBriefs(b);
+        setEnabledBriefIds(new Set(b.map(x => x.id)));
+      })
+      .catch(() => { setBrandBriefs([]); setEnabledBriefIds(new Set()); });
+  }, [activeBrandId]);
 
   const libraryIdForVote = (bannerId: string) => `voted-${bannerId}`;
 
@@ -525,9 +543,16 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setIsGenerating(true);
     setGenerationProgress({});
 
-    // Build the list of contents to render
+    // Build the list of contents to render.
+    // Multi mode merges two sources: manually typed contents[] + enabled
+    // brand briefs (auto-loaded from selected briefs). Each brief contributes
+    // its primary_text (or headline fallback) as one content variant.
+    const enabledBriefs = brandBriefs.filter(b => enabledBriefIds.has(b.id));
+    const briefContents = enabledBriefs
+      .map(b => (b.primaryText || b.primaryMessage || b.headline || '').trim())
+      .filter(Boolean);
     const contentsPlan: string[] = multiContent
-      ? contents.map(c => c.trim()).filter(Boolean)
+      ? [...contents.map(c => c.trim()).filter(Boolean), ...briefContents]
       : [brandContent.trim()];
 
     // Multi mode requires at least one non-empty content
@@ -944,10 +969,69 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               </div>
             )}
 
+            {/* Brand briefs picker — only shown in multi mode when a brand is
+                applied AND that brand has selected briefs */}
+            {multiContent && brandBriefs.length > 0 && (
+              <div className="mb-4 bg-canvas border border-brand/30 rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-fg">
+                    Brand briefs ({enabledBriefIds.size}/{brandBriefs.length} dùng)
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEnabledBriefIds(new Set(brandBriefs.map(b => b.id)))}
+                      className="text-[10px] text-muted hover:text-fg"
+                    >
+                      Tất cả
+                    </button>
+                    <span className="text-subtle">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setEnabledBriefIds(new Set())}
+                      className="text-[10px] text-muted hover:text-fg"
+                    >
+                      Bỏ hết
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {brandBriefs.map(b => {
+                    const on = enabledBriefIds.has(b.id);
+                    return (
+                      <label key={b.id} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs cursor-pointer ${on ? 'bg-brand/10' : 'hover:bg-raised'}`}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) => {
+                            const next = new Set(enabledBriefIds);
+                            if (e.target.checked) next.add(b.id); else next.delete(b.id);
+                            setEnabledBriefIds(next);
+                          }}
+                          className="mt-0.5 shrink-0 accent-brand"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-fg truncate">{b.title}</p>
+                          {b.headline && <p className="text-[10px] text-muted truncate">H: {b.headline}</p>}
+                        </div>
+                        <span className="text-[9px] font-mono text-subtle uppercase shrink-0 self-center">
+                          {b.briefType.split('-')[0]}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-subtle">
+                  Mỗi brief tick = 1 content variant. Tổng = (manual contents + briefs đã tick) × phiên bản.
+                </p>
+              </div>
+            )}
+
             {/* Variants Count — meaning changes in multi-content mode */}
             {(() => {
               const nonEmptyContents = multiContent ? contents.filter(c => c.trim()).length : 0;
-              const effectiveContents = Math.max(1, nonEmptyContents);
+              const enabledBriefCount = enabledBriefIds.size;
+              const effectiveContents = Math.max(1, nonEmptyContents + enabledBriefCount);
               const totalInMulti = effectiveContents * versionsPerContent;
               return (
                 <div className="mb-4">

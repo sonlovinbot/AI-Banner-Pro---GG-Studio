@@ -374,6 +374,53 @@ export interface BrandProject {
   references?: LibraryImage[];
   styleReferences: LibraryImage[];
   productReferences: LibraryImage[];
+  /** URL the user imported context from (Sprint G). */
+  scrapedUrl?: string;
+  /** AI summary of the scraped page — feeds brief generation. */
+  scrapedSummary?: ScrapedSummary;
+  /** When the URL was last scraped. */
+  scrapedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Sprint G: URL import + briefs ───
+
+export interface ScrapedSummary {
+  brand?: string;
+  product?: string;
+  usp?: string;
+  target_audience?: string;
+  key_offerings?: string[];
+  tone_of_voice?: string;
+  notable_elements?: string[];
+}
+
+export type BriefType =
+  | 'offer-emphasis'
+  | 'instructor-authority'
+  | 'catchy-headline'
+  | 'neutral-info'
+  | 'social-proof'
+  | 'urgency-fomo'
+  | 'problem-solution'
+  | 'benefit-led'
+  | 'aspirational'
+  | 'question-hook';
+
+export interface BrandBrief {
+  id: string;
+  brandId: string;
+  briefType: BriefType;
+  title: string;
+  primaryMessage?: string;
+  headline?: string;
+  primaryText?: string;
+  cta?: string;
+  toneNotes?: string;
+  sourceUrl?: string;
+  isSelected: boolean;
+  position: number;
   createdAt: number;
   updatedAt: number;
 }

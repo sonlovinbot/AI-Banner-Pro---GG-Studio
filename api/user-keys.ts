@@ -55,30 +55,41 @@ export default async function handler(req: Request): Promise<Response> {
   const tableUrl = `${supaUrl}/rest/v1/user_api_keys`;
 
   if (req.method === 'GET') {
-    const res = await fetch(`${tableUrl}?user_id=eq.${user.id}&select=coachio_api_key&limit=1`, {
-      headers: svcHeaders(),
-    });
+    const res = await fetch(
+      `${tableUrl}?user_id=eq.${user.id}&select=coachio_api_key,firecrawl_api_key&limit=1`,
+      { headers: svcHeaders() },
+    );
     if (!res.ok) return bad(`Read failed ${res.status}`, 500);
     const arr = await res.json();
     return json({
-      coachio_api_key: arr[0]?.coachio_api_key || null,
+      coachio_api_key:   arr[0]?.coachio_api_key   || null,
+      firecrawl_api_key: arr[0]?.firecrawl_api_key || null,
     });
   }
 
   if (req.method === 'POST') {
     let body: any;
     try { body = await req.json(); } catch { return bad('Body must be JSON'); }
-    const coachioKey = typeof body.coachio_api_key === 'string' ? body.coachio_api_key.trim() : null;
 
-    // Upsert (PK = user_id so we use POST with Prefer: resolution=merge-duplicates).
+    // Build patch: only include fields the caller specified. This lets clients
+    // update Coachio key WITHOUT clobbering an existing Firecrawl key (and vice
+    // versa), and lets either field be cleared explicitly by passing null.
+    const patch: Record<string, any> = {
+      user_id: user.id,
+      updated_at: new Date().toISOString(),
+    };
+    if (Object.prototype.hasOwnProperty.call(body, 'coachio_api_key')) {
+      patch.coachio_api_key = typeof body.coachio_api_key === 'string' ? body.coachio_api_key.trim() : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'firecrawl_api_key')) {
+      patch.firecrawl_api_key = typeof body.firecrawl_api_key === 'string' ? body.firecrawl_api_key.trim() : null;
+    }
+    if (Object.keys(patch).length <= 2) return bad('No key field provided');
+
     const res = await fetch(tableUrl, {
       method: 'POST',
       headers: { ...svcHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({
-        user_id: user.id,
-        coachio_api_key: coachioKey,
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(patch),
     });
     if (!res.ok) return bad(`Upsert failed ${res.status}: ${await res.text()}`, 500);
     return json({ ok: true });

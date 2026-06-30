@@ -18,6 +18,9 @@ function rowToProject(r: any): BrandProject {
     logo: r.logo || undefined,
     styleReferences: r.style_references || [],
     productReferences: r.product_references || [],
+    scrapedUrl: r.scraped_url || undefined,
+    scrapedSummary: r.scraped_summary || undefined,
+    scrapedAt: r.scraped_at ? new Date(r.scraped_at).getTime() : undefined,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
   };
@@ -97,6 +100,9 @@ export async function saveBrandProjectToCloud(project: BrandProject): Promise<Br
     logo: logo || null,
     style_references: styleRefs,
     product_references: productRefs,
+    scraped_url: project.scrapedUrl || null,
+    scraped_summary: project.scrapedSummary || null,
+    scraped_at: project.scrapedAt ? new Date(project.scrapedAt).toISOString() : null,
     created_at: project.createdAt ? new Date(project.createdAt).toISOString() : new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

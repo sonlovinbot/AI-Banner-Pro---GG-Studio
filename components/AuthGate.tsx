@@ -11,6 +11,7 @@ import {
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { APP_VERSION, APP_VERSION_NAME } from '../data/appVersion';
 import { bootstrapCoachioKeyFromCloud } from '../services/coachioService';
+import { bootstrapFirecrawlKeyFromCloud } from '../services/firecrawlKey';
 
 interface AuthGateProps {
   children: (user: AuthUser) => React.ReactNode;
@@ -35,11 +36,17 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
       // Pull API keys from DB into local cache so cross-device login + UI
       // reads (Settings, BannerTool, AdminRefBannersPanel) all see the
       // same key without re-typing it.
-      if (u) bootstrapCoachioKeyFromCloud().catch(() => {});
+      if (u) {
+        bootstrapCoachioKeyFromCloud().catch(() => {});
+        bootstrapFirecrawlKeyFromCloud().catch(() => {});
+      }
     });
     const off = onAuthChange((u) => {
       setUser(u);
-      if (u) bootstrapCoachioKeyFromCloud().catch(() => {});
+      if (u) {
+        bootstrapCoachioKeyFromCloud().catch(() => {});
+        bootstrapFirecrawlKeyFromCloud().catch(() => {});
+      }
     });
     return () => {
       cancelled = true;

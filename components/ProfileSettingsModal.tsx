@@ -31,6 +31,9 @@ import {
 } from '../services/storageCleanupService';
 import { isAdmin } from '../services/adminAuth';
 import { AdminRefBannersPanel } from './AdminRefBannersPanel';
+import {
+  getFirecrawlApiKey, setFirecrawlApiKey, removeFirecrawlApiKey,
+} from '../services/firecrawlKey';
 
 type SettingsTab = 'profile' | 'keys' | 'meta' | 'storage' | 'admin-refs';
 
@@ -94,7 +97,7 @@ export const ProfileSettingsModal: React.FC<Props> = ({ user, onClose, initialTa
 
         <div className="flex-1 overflow-y-auto p-5">
           {tab === 'profile' && <ProfileSection user={user} />}
-          {tab === 'keys'    && <KeysSection />}
+          {tab === 'keys'    && <KeysSection user={user} />}
           {tab === 'meta'    && <MetaAccountsSection />}
           {tab === 'storage' && <StorageSection />}
           {tab === 'admin-refs' && isAdmin(user) && <AdminRefBannersPanel />}
@@ -246,11 +249,13 @@ const ProfileSection: React.FC<{ user?: User }> = ({ user }) => {
 
 // ────────────── API Keys ──────────────
 
-const KeysSection: React.FC = () => {
+const KeysSection: React.FC<{ user?: User }> = ({ user }) => {
   const [showCoachio, setShowCoachio] = useState(false);
+  const [showFirecrawl, setShowFirecrawl] = useState(false);
   const coachioSaved = !!getCoachioApiKey();
+  const firecrawlSaved = !!getFirecrawlApiKey();
+  const adminMode = isAdmin(user);
   // Google Gemini path hidden — Coachio is the only banner gen provider now.
-  // Hidden state still tracks the legacy KeyCard but never opens.
   void getGeminiApiKey;
 
   return (
@@ -272,6 +277,31 @@ const KeysSection: React.FC = () => {
       >
         <CoachioForm onSaved={() => setShowCoachio(false)} />
       </KeyCard>
+
+      {adminMode ? (
+        <div className="border border-line rounded-lg p-3 bg-raised/30">
+          <p className="text-sm font-medium text-fg flex items-center gap-2">
+            <Sparkles size={14} className="text-brand" /> Firecrawl
+          </p>
+          <p className="text-[11px] text-muted mt-1">
+            Bạn là admin — server dùng env key <code className="text-fg bg-canvas px-1 py-0.5 rounded font-mono text-[10px]">FIRECRAWL_API_KEY</code>.
+            Không cần nhập key cá nhân.
+          </p>
+        </div>
+      ) : (
+        <KeyCard
+          accent="indigo"
+          title="Firecrawl"
+          subtitle="Scrape URL → markdown cho URL Import trong Brand Style"
+          helpUrl="https://firecrawl.dev/app/api-keys"
+          helpLabel="Lấy key từ Firecrawl"
+          savedBadge={firecrawlSaved}
+          expanded={showFirecrawl}
+          onToggle={() => setShowFirecrawl(s => !s)}
+        >
+          <FirecrawlForm onSaved={() => setShowFirecrawl(false)} />
+        </KeyCard>
+      )}
     </div>
   );
 };
@@ -460,6 +490,57 @@ const CoachioForm: React.FC<{ onSaved: () => void }> = ({ onSaved }) => {
             onClick={remove}
             className="text-sm text-danger hover:bg-danger-soft px-3 py-2 rounded-lg border border-line"
           >
+            Xoá
+          </button>
+        )}
+      </div>
+    </>
+  );
+};
+
+const FirecrawlForm: React.FC<{ onSaved: () => void }> = ({ onSaved }) => {
+  const [key, setKey] = useState(getFirecrawlApiKey());
+  const [show, setShow] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const save = () => {
+    if (!key.trim()) return;
+    setFirecrawlApiKey(key.trim());
+    setSavedFlash(true);
+    setTimeout(() => { setSavedFlash(false); onSaved(); }, 400);
+  };
+
+  const remove = () => {
+    removeFirecrawlApiKey();
+    setKey('');
+  };
+
+  return (
+    <>
+      <div className="relative">
+        <input
+          type={show ? 'text' : 'password'}
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          className="w-full bg-canvas border border-line rounded-lg px-3 py-2.5 pr-10 text-sm font-mono focus:outline-none focus:border-brand"
+        />
+        <button onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-fg">
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+      {key && <p className="text-xs font-mono text-muted">Hiện tại: {maskKey(key)}</p>}
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={save}
+          disabled={!key.trim() || savedFlash}
+          className="text-sm bg-brand hover:bg-brand-dark disabled:opacity-50 text-white px-3 py-2 rounded-lg flex items-center gap-1.5 font-medium"
+        >
+          {savedFlash ? <CheckCircle size={14} /> : <Save size={14} />}
+          {savedFlash ? 'Đã lưu' : 'Lưu key'}
+        </button>
+        {key && (
+          <button onClick={remove} className="text-sm text-danger hover:bg-danger-soft px-3 py-2 rounded-lg border border-line">
             Xoá
           </button>
         )}

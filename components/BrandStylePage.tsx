@@ -12,6 +12,7 @@ import {
 } from '../services/brandProjectService';
 import { compressForLibrary, readImagesFromClipboard, filesToFileList } from '../services/imageUtils';
 import { setStudioHandoff } from '../services/studioHandoffService';
+import { BrandUrlImportPanel } from './BrandUrlImportPanel';
 
 interface Props {
   onNavigate: (page: AppPage, opts?: { adsTab?: string }) => void;
@@ -519,6 +520,12 @@ const BrandEditor: React.FC<EditorProps> = ({ draft, onChange, onCancel, onSave,
           </div>
         </section>
       </div>
+
+      {/* Full-width URL Import section — needs brand to be saved first */}
+      <BrandUrlImportPanel
+        draft={draft}
+        onChange={(patch) => update(patch)}
+      />
     </div>
   );
 };
