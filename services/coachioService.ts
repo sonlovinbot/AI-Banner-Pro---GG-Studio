@@ -39,6 +39,40 @@ async function syncCoachioKeyToCloud(key: string | null): Promise<void> {
   });
 }
 
+/** Pull Coachio key from DB into localStorage cache. Call on auth restore /
+ *  app boot — fixes the case where user saved key on another device or
+ *  cleared browser storage. localStorage is treated as cache; DB is source
+ *  of truth across devices. No-op if localStorage already has a key (the
+ *  user might have edited it locally; don't overwrite). */
+export async function bootstrapCoachioKeyFromCloud(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  if (!isSupabaseConfigured) return null;
+  // Already cached — DB sync ran at some point. Bail to avoid overwriting
+  // a fresher local edit that hasn't synced yet.
+  const cached = getCoachioApiKey();
+  if (cached) return cached;
+
+  try {
+    const { data } = await getSupabase().auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return null;
+    const res = await fetch('/api/user-keys', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    const dbKey = body?.coachio_api_key as string | null;
+    if (dbKey) {
+      localStorage.setItem(COACHIO_API_KEY_STORAGE, dbKey);
+      return dbKey;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[coachio] bootstrap from DB failed', e);
+    return null;
+  }
+}
+
 async function uploadImageToCoachio(file: File, apiKey: string): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
