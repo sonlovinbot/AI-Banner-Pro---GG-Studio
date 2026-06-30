@@ -404,6 +404,141 @@ const delete_creative_draft: McpToolDef = {
   },
 };
 
+// ─────────────────── Image upload (Claude/ChatGPT → URL) ───────────────────
+//
+// When the user attaches an image in chat, Claude has the bytes in context but
+// MCP tools can't read that directly — Claude must pass base64 in tool args.
+// This tool decodes, uploads to Bunny CDN, returns a stable public URL
+// usable by:
+//   - start_banner_gen (style_reference_url / product_reference_url)
+//   - Meta MCP ads_create_creative (image_url)
+//   - save_creative_draft (after creating a banner_history row)
+
+const ALLOWED_UPLOAD_MIME = new Set([
+  'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
+]);
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;  // 4MB (Vercel body limit safety margin)
+
+const upload_image: McpToolDef = {
+  name: 'upload_image',
+  description:
+    'Decode a base64 image and upload to Banner Ads Pro CDN. Returns a stable ' +
+    'public URL usable by start_banner_gen (as reference) or Meta MCP ' +
+    'ads_create_creative (as image_url). Optionally also saves the image to ' +
+    'banner_history so the user sees it in the History tab. ' +
+    'Use when the user uploads/pastes an image in chat that you need to reference.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      image_base64: {
+        type: 'string',
+        description: 'Base64-encoded image bytes. Accepts data URI form (data:image/png;base64,...) or raw base64.',
+      },
+      mime_type: {
+        type: 'string',
+        enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+        description: 'Override mime type. Auto-detected from data URI prefix if not provided.',
+      },
+      label: {
+        type: 'string',
+        description: 'Optional human-readable name shown in History tab when save_to_library=true.',
+      },
+      save_to_library: {
+        type: 'boolean',
+        default: false,
+        description: 'When true, also creates a banner_history row so the image appears in the user\'s History tab and can later be referenced by banner_id.',
+      },
+    },
+    required: ['image_base64'],
+  },
+  requiredScopes: ['banners:write'],
+  handler: async (args, ctx) => {
+    let raw = String(args.image_base64 || '').trim();
+    let detectedMime = args.mime_type as string | undefined;
+
+    // Strip data URI prefix if present + extract mime
+    const dataUriMatch = raw.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataUriMatch) {
+      detectedMime = detectedMime || dataUriMatch[1];
+      raw = dataUriMatch[2];
+    }
+
+    const mimeType = (detectedMime || 'image/png').toLowerCase();
+    if (!ALLOWED_UPLOAD_MIME.has(mimeType)) {
+      return error(`Unsupported mime_type: ${mimeType}`);
+    }
+
+    // Decode base64
+    let bytes: Uint8Array;
+    try {
+      const binary = atob(raw.replace(/\s/g, ''));
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } catch (e: any) {
+      return error(`Invalid base64: ${e?.message || e}`);
+    }
+
+    if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+      return error(`Image too large (${(bytes.byteLength / 1024 / 1024).toFixed(2)}MB) — limit ${MAX_UPLOAD_BYTES / 1024 / 1024}MB`);
+    }
+    if (bytes.byteLength < 128) {
+      return error('Image suspiciously small — base64 may be truncated');
+    }
+
+    // Upload to Bunny — folder=uploads to distinguish from gen output
+    let uploaded;
+    try {
+      uploaded = await uploadBytesToBunny({
+        userId: ctx.userId,
+        bytes,
+        mimeType,
+        folder: 'uploads',
+      });
+    } catch (e: any) {
+      return error(`Bunny upload failed: ${e?.message || e}`);
+    }
+
+    // Optionally persist to banner_history so the user can reference it by id later
+    let bannerId: string | undefined;
+    if (args.save_to_library) {
+      bannerId = newId();
+      const aspectRatio = '1:1';  // unknown without parsing image — caller can update later
+      try {
+        await supaPost('banner_history', {
+          id: bannerId,
+          user_id: ctx.userId,
+          image_url: uploaded.url,
+          prompt_used: args.label || 'Uploaded via Claude/ChatGPT',
+          model: 'upload',
+          quality: '1K',
+          aspect_ratio: aspectRatio,
+          version: 1,
+          created_at: new Date().toISOString(),
+        });
+      } catch (e: any) {
+        // CDN upload OK but DB insert failed — still return URL.
+        return textJson({
+          url: uploaded.url,
+          size_bytes: bytes.byteLength,
+          mime_type: mimeType,
+          banner_id: null,
+          warning: `Uploaded to CDN but DB save failed: ${e?.message || e}`,
+        });
+      }
+    }
+
+    return textJson({
+      url: uploaded.url,
+      size_bytes: bytes.byteLength,
+      mime_type: mimeType,
+      banner_id: bannerId || null,
+      message: bannerId
+        ? `Uploaded ${(bytes.byteLength / 1024).toFixed(0)}KB → ${uploaded.url}. Saved to library as banner ${bannerId}.`
+        : `Uploaded ${(bytes.byteLength / 1024).toFixed(0)}KB → ${uploaded.url}. Not saved to library (transient).`,
+    });
+  },
+};
+
 // ─────────────────── Banner generation (async, 2-call pattern) ───────────────────
 //
 // Coachio gen takes 30-90s — too long for a single 25s Edge call. Split into:
@@ -445,11 +580,19 @@ const start_banner_gen: McpToolDef = {
       },
       style_reference_banner_id: {
         type: 'string',
-        description: 'Optional banner_id to use as style/composition reference',
+        description: 'Optional banner_id (from list_banners or upload_image) to use as style/composition reference',
+      },
+      style_reference_url: {
+        type: 'string',
+        description: 'Alternative to style_reference_banner_id — pass a CDN URL directly (e.g. from upload_image)',
       },
       product_reference_banner_id: {
         type: 'string',
         description: 'Optional banner_id to use as product reference (object integrated into design)',
+      },
+      product_reference_url: {
+        type: 'string',
+        description: 'Alternative to product_reference_banner_id — pass a CDN URL directly (e.g. from upload_image)',
       },
     },
     required: ['prompt'],
@@ -467,17 +610,27 @@ const start_banner_gen: McpToolDef = {
       );
     }
 
-    // 2. Resolve reference banner URLs if provided.
+    // 2. Resolve reference URLs — accept either banner_id (validated against
+    //    user's own banner_history) or raw URL (e.g. from upload_image).
+    //    banner_id takes precedence if both passed for the same slot.
     const refUrls: string[] = [];
-    for (const refKey of ['style_reference_banner_id', 'product_reference_banner_id']) {
-      const refId = args[refKey];
-      if (!refId) continue;
-      const ref = await supaSelectOne<any>('banner_history',
-        `id=eq.${refId}&user_id=eq.${ctx.userId}&select=image_url`);
-      if (!ref?.image_url) {
-        return error(`Reference banner ${refId} not found or no image_url`);
+    for (const slot of [
+      { idKey: 'style_reference_banner_id',   urlKey: 'style_reference_url' },
+      { idKey: 'product_reference_banner_id', urlKey: 'product_reference_url' },
+    ]) {
+      const refId = args[slot.idKey];
+      const refUrl = args[slot.urlKey];
+      if (refId) {
+        const ref = await supaSelectOne<any>('banner_history',
+          `id=eq.${refId}&user_id=eq.${ctx.userId}&select=image_url`);
+        if (!ref?.image_url) return error(`Reference banner ${refId} not found or no image_url`);
+        refUrls.push(ref.image_url);
+      } else if (refUrl) {
+        // Basic sanity check — must look like a URL
+        try { new URL(refUrl); }
+        catch { return error(`Invalid ${slot.urlKey}: not a valid URL`); }
+        refUrls.push(refUrl);
       }
-      refUrls.push(ref.image_url);
     }
 
     // 3. Submit to Coachio.
@@ -690,6 +843,8 @@ export const ALL_TOOLS: McpToolDef[] = [
   save_creative_draft,
   update_creative_draft,
   delete_creative_draft,
+  // Image upload (chat → CDN URL bridge)
+  upload_image,
   // Banner generation — async 2-call pattern (Coachio takes 30-90s)
   start_banner_gen,
   check_banner_gen,
