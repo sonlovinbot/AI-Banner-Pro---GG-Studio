@@ -95,7 +95,12 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // Quick sanity check on format — Firecrawl keys start with "fc-"
+  // Defensive: Firecrawl keys must start with "fc-". User often pastes only
+  // the hex portion when adding to env — prepend silently rather than fail.
+  if (!apiKey.startsWith('fc-')) {
+    apiKey = 'fc-' + apiKey;
+  }
+
   const keyLooksValid = apiKey.startsWith('fc-') && apiKey.length >= 20;
   const maskedKey = apiKey.length >= 8
     ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)} (len=${apiKey.length})`

@@ -77,6 +77,23 @@ export async function replaceBriefsForBrand(
 ): Promise<BrandBrief[]> {
   const userId = await requireUserId();
 
+  // Verify the brand row actually exists in DB. If the user clicked
+  // "Brand mới" but hasn't saved yet, the brand_projects row doesn't exist
+  // yet and the briefs insert would hit a foreign key violation with an
+  // opaque error message. Surface a friendlier one.
+  const { data: brand, error: brandErr } = await getSupabase()
+    .from('brand_projects')
+    .select('id')
+    .eq('id', brandId)
+    .maybeSingle();
+  if (brandErr) throw brandErr;
+  if (!brand) {
+    throw new Error(
+      'Brand chưa được lưu vào cloud — click "Lưu" ở trên (cần đặt tên brand trước) ' +
+      'rồi mở lại Import URL.',
+    );
+  }
+
   // Delete existing first.
   const { error: delErr } = await getSupabase()
     .from('brand_briefs')
