@@ -378,16 +378,7 @@ export const CampaignsTab: React.FC<Props> = ({ campaigns, creatives, banners, l
                     </div>
                   </button>
 
-                  {c.metaCampaignId && (
-                    <button
-                      onClick={() => handleSyncStatus(c)}
-                      disabled={syncing === c.id}
-                      className="text-muted hover:text-brand p-1.5 rounded hover:bg-brand/10 disabled:opacity-50"
-                      title="Pull trạng thái mới nhất từ Meta về"
-                    >
-                      {syncing === c.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    </button>
-                  )}
+                  {/* Per-campaign sync hidden — Claude+Meta MCP path handles status now */}
                   <button
                     onClick={() => setPushPreview(c)}
                     className="text-muted hover:text-brand p-1.5 rounded hover:bg-brand/10"

@@ -215,13 +215,10 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
     [campaign, campaignAdSets, creatives, banners, metaAccounts],
   );
 
-  // Pre-flight: how many Pipeboard calls this push will burn + current quota.
-  // Read fresh on every render so the user sees up-to-date numbers.
-  const estimatedCalls = useMemo(() => estimatePipeboardCalls(payload), [payload]);
-  const quota = getWeeklyUsage();
-  const quotaAfter = quota.used + estimatedCalls;
-  const willExceedQuota = quotaAfter > quota.limit;
-  const pushEnabled = isMetaPushEnabled();
+  // Pipeboard pre-flight retained behind a hidden dev flag — users push via
+  // Claude+Meta MCP now (Agent prompt tab). Keep imports alive for the day
+  // we re-expose this for an internal/test toggle.
+  void estimatePipeboardCalls; void getWeeklyUsage; void isMetaPushEnabled;
 
   const agentPrompt = useMemo(
     () => buildMcpAgentPrompt(payload),
@@ -336,68 +333,37 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
         )}
 
         <footer className="px-6 py-4 border-t border-line bg-surface space-y-3">
-          <div className="flex items-start gap-2 status-warning border px-3 py-2 rounded-lg text-sm">
-            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 status-info border px-3 py-2 rounded-lg text-sm">
+            <Sparkles size={14} className="shrink-0 mt-0.5" />
             <span>
-              Mọi push từ app này lên Meta đều ở trạng thái <b>PAUSED</b>. Bạn review + activate thủ công trên Meta Ads Manager.
+              <b>Push lên Meta</b> hiện đi qua <b>Claude/ChatGPT + Meta Ads MCP</b>.
+              Tab <b>Agent prompt (MCP)</b> phía trên — copy prompt, paste vào Claude đã connect <code className="text-fg bg-raised px-1 py-0.5 rounded font-mono">mcp.facebook.com/ads</code> → Claude tự tạo campaign cho ad PAUSED.
+              Tất cả URL banner đã là CDN công khai, Meta MCP fetch trực tiếp.
             </span>
           </div>
-
-          {/* Pre-flight quota line — exact cost + remaining budget. */}
-          <div className={`text-xs px-3 py-2 rounded-lg border flex items-center justify-between gap-3 ${
-            willExceedQuota ? 'status-danger' : quotaAfter >= quota.limit * 0.8 ? 'status-warning' : 'status-info'
-          }`}>
-            <span>
-              Push này sẽ dùng <b>{estimatedCalls}</b> Pipeboard call
-              {payload.uploads.length > 0 && ` (${payload.uploads.length} upload + 1 campaign + ${payload.adSets.length} adset + ${payload.creatives.length} creative + ${payload.ads.length} ad)`}.
-            </span>
-            <span className="shrink-0 font-mono">
-              Tuần này: {quota.used} → <b>{quotaAfter}</b> / {quota.limit}
-            </span>
-          </div>
-          {willExceedQuota && (
-            <div className="text-xs status-danger border px-3 py-2 rounded-lg">
-              ⚠️ Vượt quota tuần này. Pipeboard sẽ reject một số call. Nâng plan hoặc đợi đến reset.
-            </div>
-          )}
-          {!pushEnabled && (
-            <div className="text-xs status-warning border px-3 py-2 rounded-lg">
-              🔒 Push Meta đang TẮT (Settings → Meta Accounts). Chỉ dry-run được phép.
-            </div>
-          )}
 
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted">
-              Push qua Pipeboard MCP — cần env <code className="text-fg bg-raised px-1 py-0.5 rounded">PIPEBOARD_API_TOKEN</code> ở Vercel. Không token → server tự dry-run.
+            <p className="text-xs text-subtle">
+              Banner Ads Pro MCP server đang phát triển — sẽ cho Claude truy cập banners + drafts trực tiếp (Sprint sắp tới).
             </p>
             <div className="flex gap-2 shrink-0">
               <button
+                onClick={() => setTab('agent')}
+                className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-semibold flex items-center gap-2"
+                title="Xem prompt để paste vào Claude"
+              >
+                <Sparkles size={14} />
+                Xem Agent prompt
+              </button>
+              {/* Internal/dev only — direct Pipeboard push retained behind a hidden flag */}
+              <button
                 onClick={() => runPush(true)}
                 disabled={pushing !== 'idle'}
-                className="text-sm px-4 py-2 rounded-lg bg-canvas hover:bg-raised text-fg border border-line-strong flex items-center gap-2 disabled:opacity-50 font-medium"
-                title="Gọi Edge function ở chế độ dry-run, không POST lên Meta"
+                className="text-sm px-3 py-2 rounded-lg bg-canvas hover:bg-raised text-muted border border-line flex items-center gap-2 disabled:opacity-50"
+                title="Internal: validate payload offline (không gọi Meta)"
               >
                 {pushing === 'dry' ? <Loader2 size={14} className="animate-spin" /> : <ServerCog size={14} />}
-                Test (dry-run)
-              </button>
-              <button
-                onClick={() => {
-                  if (!report.canPush || !pushEnabled) return;
-                  const msg = `Push lên Meta (PAUSED)?\n` +
-                    `Sẽ dùng ${estimatedCalls} Pipeboard call (tuần này: ${quota.used}→${quotaAfter}/${quota.limit}).\n` +
-                    (willExceedQuota ? `\n⚠️ VƯỢT QUOTA — một số call có thể bị reject.\n` : '') +
-                    `\nTất cả ad sẽ tạo ở trạng thái paused — bạn review + activate trên Meta Ads Manager.`;
-                  if (!confirm(msg)) return;
-                  runPush(false);
-                }}
-                disabled={pushing !== 'idle' || !report.canPush || !pushEnabled}
-                className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-semibold flex items-center gap-2 disabled:opacity-50"
-                title={!pushEnabled ? 'Push Meta đang tắt — bật ở Settings'
-                     : !report.canPush ? 'Còn validation lỗi — sửa trước'
-                     : `Push ${estimatedCalls} call lên Meta`}
-              >
-                {pushing === 'real' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                Push to Meta (PAUSED)
+                Dry-run
               </button>
               <button onClick={onClose} className="text-sm px-3 py-2 rounded-lg text-muted hover:text-fg hover:bg-raised">
                 Đóng

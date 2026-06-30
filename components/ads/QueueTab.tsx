@@ -50,7 +50,10 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, adSets, banner
       });
   }, []);
 
+  // pushedCount + handleSyncAll retained for future re-exposure (currently
+  // hidden — sync runs through Claude/Meta MCP).
   const pushedCount = campaigns.filter(c => c.metaCampaignId).length;
+  void pushedCount;
 
   const handleSyncAll = async () => {
     setSyncing(true);
@@ -66,6 +69,7 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, adSets, banner
       setSyncing(false);
     }
   };
+  void handleSyncAll; void syncing;
 
   const onDragStart = (e: React.DragEvent, c: AdCreative) => {
     e.dataTransfer.setData('text/plain', c.id);
@@ -160,17 +164,9 @@ export const QueueTab: React.FC<Props> = ({ creatives, campaigns, adSets, banner
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pushedCount > 0 && (
-            <button
-              onClick={handleSyncAll}
-              disabled={syncing}
-              className="text-xs bg-brand hover:bg-brand-dark text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium disabled:opacity-50"
-              title={`Pull status của ${pushedCount} campaign đã push (tốn ~${pushedCount * 4} Pipeboard call)`}
-            >
-              {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-              Sync from Meta ({pushedCount})
-            </button>
-          )}
+          {/* Sync-from-Meta button hidden — status sync runs through Claude/Meta MCP
+              (or internal Pipeboard fallback, dev-only) now. Code retained in
+              metaSyncService for future re-exposure. */}
           {archived.length > 0 && (
             <button
               onClick={() => setShowArchived(s => !s)}
