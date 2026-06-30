@@ -16,6 +16,7 @@
 //   - Returns text content with JSON-stringified payload — Claude parses it.
 
 import { supaSelectOne } from '../_lib/mcpOAuth';
+import { generateImage, uploadBytesToBunny } from '../_lib/imageGen';
 
 export interface McpToolContext {
   userId: string;
@@ -371,6 +372,182 @@ const update_creative_draft: McpToolDef = {
   },
 };
 
+const VALID_ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16'];
+
+const create_banner: McpToolDef = {
+  name: 'create_banner',
+  description:
+    'Generate a new banner image from a text prompt via Imagen 4 fast, ' +
+    'upload to CDN, and save to the user\'s banner history. Returns banner_id ' +
+    'and image_url ready for Meta MCP ads_create_creative (image_url param). ' +
+    'Takes 5-15s. The image is text-only generation — for product/brand image ' +
+    'editing, the user should use the Banner Ads Pro UI which supports reference inputs.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        minLength: 5,
+        maxLength: 2000,
+        description: 'Vivid description of what to render. More specific = better.',
+      },
+      aspect_ratio: {
+        type: 'string',
+        enum: VALID_ASPECT_RATIOS,
+        default: '1:1',
+      },
+      tag: {
+        type: 'string',
+        description: 'Optional label stored alongside (eg. "black-friday", "winter-sale")',
+      },
+    },
+    required: ['prompt'],
+  },
+  requiredScopes: ['banners:write'],
+  handler: async (args, ctx) => {
+    const prompt = String(args.prompt).trim();
+    const aspect = args.aspect_ratio || '1:1';
+    const startedAt = Date.now();
+
+    // 1. Generate (5-15s typical).
+    let image;
+    try {
+      image = await generateImage({ prompt, aspectRatio: aspect });
+    } catch (e: any) {
+      return error(`Image generation failed: ${e?.message || e}`);
+    }
+
+    // 2. Upload to Bunny — returns public CDN URL we can feed to Meta MCP.
+    let uploaded;
+    try {
+      uploaded = await uploadBytesToBunny({
+        userId: ctx.userId,
+        bytes: image.bytes,
+        mimeType: image.mimeType,
+        folder: 'banners',
+      });
+    } catch (e: any) {
+      return error(`Upload to CDN failed: ${e?.message || e}`);
+    }
+
+    // 3. Persist row in banner_history so it appears in the app History tab.
+    const id = newId();
+    const duration = Date.now() - startedAt;
+    const promptWithTag = args.tag ? `${prompt} [#${args.tag}]` : prompt;
+    try {
+      await supaPost('banner_history', {
+        id,
+        user_id: ctx.userId,
+        image_url: uploaded.url,
+        prompt_used: promptWithTag,
+        model: 'imagen-4.0-fast-generate-001',
+        quality: '1K',
+        aspect_ratio: aspect,
+        duration,
+        version: 1,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      return error(`Saved to CDN but DB insert failed: ${e?.message || e}`);
+    }
+
+    return textJson({
+      banner: {
+        id,
+        image_url: uploaded.url,
+        prompt: promptWithTag,
+        aspect_ratio: aspect,
+        model: 'imagen-4.0-fast-generate-001',
+        duration_ms: duration,
+      },
+      message: `Generated banner ${id} in ${(duration / 1000).toFixed(1)}s. ` +
+               `Pass image_url to Meta MCP ads_create_creative or to save_creative_draft.`,
+    });
+  },
+};
+
+const clone_banner_with_variations: McpToolDef = {
+  name: 'clone_banner_with_variations',
+  description:
+    'Generate N variations of a source banner. Uses the source\'s prompt as a ' +
+    'starting point, then asks Imagen to render N alternatives with the ' +
+    'angle hint(s) provided. Returns the new banner_ids — Claude can chain ' +
+    'into Meta MCP to A/B test them. Cost: ~5-15s per variant. Cap at 5 / call.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      source_banner_id: { type: 'string' },
+      count: { type: 'integer', minimum: 1, maximum: 5, default: 3 },
+      angle_hint: {
+        type: 'string',
+        description: 'Optional steering text appended to each variant prompt ' +
+                     '(eg. "more urgency", "minimalist", "evening lighting")',
+      },
+    },
+    required: ['source_banner_id'],
+  },
+  requiredScopes: ['banners:write', 'banners:read'],
+  handler: async (args, ctx) => {
+    const source = await supaSelectOne<any>('banner_history',
+      `id=eq.${args.source_banner_id}&user_id=eq.${ctx.userId}&select=id,prompt_used,aspect_ratio`);
+    if (!source) return error(`Source banner ${args.source_banner_id} not found`);
+
+    const count = Math.min(5, Math.max(1, args.count ?? 3));
+    const angles = [
+      'benefit-led — emphasize the upside for the viewer',
+      'urgency-led — limited time / scarcity vibe',
+      'social-proof — shows other people loving the result',
+      'minimalist — clean, single subject',
+      'aspirational — premium, lifestyle, evening light',
+    ];
+
+    const results: any[] = [];
+    const errors: string[] = [];
+
+    // Sequential to stay under 25s Edge timeout (parallel would race the limit).
+    for (let i = 0; i < count; i++) {
+      const angle = args.angle_hint || angles[i % angles.length];
+      const prompt = `${source.prompt_used}\n\nVariation ${i + 1}/${count} — angle: ${angle}. ` +
+                     `Keep core composition similar but vary visual hook.`;
+      try {
+        const img = await generateImage({ prompt, aspectRatio: source.aspect_ratio });
+        const uploaded = await uploadBytesToBunny({
+          userId: ctx.userId,
+          bytes: img.bytes,
+          mimeType: img.mimeType,
+          folder: 'banners',
+        });
+        const id = newId();
+        await supaPost('banner_history', {
+          id,
+          user_id: ctx.userId,
+          image_url: uploaded.url,
+          prompt_used: prompt,
+          model: 'imagen-4.0-fast-generate-001',
+          quality: '1K',
+          aspect_ratio: source.aspect_ratio,
+          parent_id: source.id,
+          version: i + 2,  // source is v1, variants start at v2
+          created_at: new Date().toISOString(),
+        });
+        results.push({ id, image_url: uploaded.url, angle });
+      } catch (e: any) {
+        errors.push(`Variant ${i + 1}: ${e?.message || e}`);
+      }
+    }
+
+    return textJson({
+      source_banner_id: source.id,
+      generated: results.length,
+      variants: results,
+      errors: errors.length > 0 ? errors : undefined,
+      message: results.length === count
+        ? `Generated all ${count} variants. Use list_banners with parent_id=${source.id} to see them grouped.`
+        : `Generated ${results.length}/${count} variants. See errors[].`,
+    });
+  },
+};
+
 const delete_creative_draft: McpToolDef = {
   name: 'delete_creative_draft',
   description:
@@ -411,10 +588,13 @@ export const ALL_TOOLS: McpToolDef[] = [
   get_banner,
   list_creative_drafts,
   get_creative_draft,
-  // Write
+  // Write — drafts
   save_creative_draft,
   update_creative_draft,
   delete_creative_draft,
+  // Write — banner generation
+  create_banner,
+  clone_banner_with_variations,
 ];
 
 export function getTool(name: string): McpToolDef | undefined {
