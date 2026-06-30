@@ -8,12 +8,22 @@ import { UGCStudio } from './components/UGCStudio';
 import { AdsManagerPage } from './components/AdsManagerPage';
 import { AppShell } from './components/AppShell';
 import { AuthGate } from './components/AuthGate';
+import { McpConsentPage } from './components/McpConsentPage';
 import { initTheme } from './services/themeService';
+
+// OAuth consent for MCP clients lives outside the normal app shell — when
+// /api/mcp/authorize bounces the user back here with `?oauth_consent=1`,
+// we render the standalone consent page instead of the dashboard.
+function isMcpConsentRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('oauth_consent') === '1';
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<AppPage>('menu');
   // Optional sub-tab hint when arriving at AdsManagerPage. Cleared after use.
   const [adsInitialTab, setAdsInitialTab] = useState<string | undefined>();
+  const consentMode = isMcpConsentRoute();
 
   useEffect(() => {
     initTheme();
@@ -37,6 +47,16 @@ export default function App() {
       default:            return <MenuPage onNavigate={navigate} />;
     }
   };
+
+  // MCP consent flow requires the user to be logged in but bypasses the
+  // dashboard shell — render the consent UI directly inside AuthGate.
+  if (consentMode) {
+    return (
+      <AuthGate>
+        {() => <McpConsentPage />}
+      </AuthGate>
+    );
+  }
 
   return (
     <AuthGate>
