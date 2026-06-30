@@ -23,6 +23,10 @@ import {
   fetchAllForAccount, readMetaCache, clearMetaCache,
 } from '../services/metaFetchService';
 import {
+  getWeeklyUsage, clearQuotaLog, isMetaPushEnabled, setMetaPushEnabled,
+  PIPEBOARD_FREE_WEEKLY_LIMIT,
+} from '../services/pipeboardQuota';
+import {
   inventoryLocalStorage, clearGroups, formatBytes, StorageReport, StorageGroupId,
 } from '../services/storageCleanupService';
 
@@ -479,6 +483,24 @@ const MetaAccountsSection: React.FC = () => {
   const [editing, setEditing] = useState<MetaAccount | null>(null);
   const [setupNeeded, setSetupNeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabledLocal] = useState(isMetaPushEnabled());
+  const [quota, setQuota] = useState(() => getWeeklyUsage());
+  // Recompute quota on focus so jumping back to Settings after a push shows fresh numbers
+  useEffect(() => {
+    const onFocus = () => setQuota(getWeeklyUsage());
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+  const togglePush = () => {
+    const next = !pushEnabled;
+    setMetaPushEnabled(next);
+    setPushEnabledLocal(next);
+  };
+  const resetQuota = () => {
+    if (!confirm('Xoá log Pipeboard tuần này? (Chỉ ảnh hưởng counter local, không reset thật trên Pipeboard.)')) return;
+    clearQuotaLog();
+    setQuota(getWeeklyUsage());
+  };
 
   const refresh = async () => {
     setError(null);
@@ -529,8 +551,79 @@ const MetaAccountsSection: React.FC = () => {
     );
   }
 
+  const usagePct = Math.min(100, Math.round((quota.used / quota.limit) * 100));
+  const usageColor = quota.used >= quota.limit ? 'bg-danger-fg'
+                    : quota.used >= quota.limit * 0.8 ? 'bg-warning-fg'
+                    : 'bg-brand';
+
   return (
     <div className="space-y-3">
+      {/* Pipeboard quota + push toggle — global controls */}
+      <div className="border border-line rounded-xl p-4 bg-raised/30 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg flex items-center gap-2">
+              Pipeboard quota tuần này
+              <span className="text-[11px] font-mono text-muted">
+                {quota.used} / {quota.limit}
+              </span>
+            </p>
+            <p className="text-[11px] text-subtle mt-0.5">
+              Free tier 30 calls/tuần. Reset {new Date(quota.resetAt).toLocaleString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}.
+            </p>
+          </div>
+          <button
+            onClick={resetQuota}
+            className="text-[11px] text-muted hover:text-fg px-2 py-1 rounded border border-line hover:bg-canvas shrink-0"
+            title="Reset counter local — không reset trên Pipeboard"
+          >
+            Reset local
+          </button>
+        </div>
+        <div className="h-1.5 w-full bg-canvas rounded-full overflow-hidden">
+          <div className={`h-full ${usageColor} transition-all`} style={{ width: `${usagePct}%` }} />
+        </div>
+        {quota.logs.length > 0 && (
+          <details className="text-[11px] text-muted">
+            <summary className="cursor-pointer hover:text-fg">
+              Chi tiết ({quota.logs.length} lần gọi tuần này)
+            </summary>
+            <ul className="mt-1.5 space-y-0.5 max-h-32 overflow-y-auto font-mono">
+              {quota.logs.slice(0, 30).map((l, i) => (
+                <li key={i} className="flex justify-between gap-3">
+                  <span className="truncate">{l.label}</span>
+                  <span className="shrink-0 text-subtle">
+                    {l.count}× · {new Date(l.ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
+        <div className="border-t border-line/60 pt-3 flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-fg">Bật push Meta</p>
+            <p className="text-[11px] text-subtle">
+              Tắt → mọi nút "Push to Meta" disabled, chỉ dry-run được phép. Dùng khi test hoặc bảo vệ quota.
+            </p>
+          </div>
+          <button
+            onClick={togglePush}
+            className={`shrink-0 w-11 h-6 rounded-full relative transition-colors ${
+              pushEnabled ? 'bg-brand' : 'bg-line'
+            }`}
+            title={pushEnabled ? 'Đang bật — click để tắt' : 'Đang tắt — click để bật'}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                pushEnabled ? 'translate-x-5' : ''
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
       <p className="text-sm text-muted leading-relaxed">
         Cấu hình một lần — Ad Account + Page (+ Instagram). Mọi campaign sau chỉ pick từ list này.
         Đặt 1 cái làm default — wizard tự chọn.

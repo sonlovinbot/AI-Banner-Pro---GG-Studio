@@ -379,6 +379,16 @@ export interface MetaTargetingPayload {
   excluded_custom_audiences?: { id: string }[];
 }
 
+/** Predict how many Pipeboard tool calls a push of this payload will spend.
+ *  Used for the pre-flight quota check in the UI. */
+export function estimatePipeboardCalls(payload: MetaPushPayload): number {
+  return payload.uploads.length          // upload_ad_image per banner
+       + 1                                // create_campaign
+       + payload.adSets.length            // create_adset per adset
+       + payload.creatives.length         // create_ad_creative per creative
+       + payload.ads.length;              // create_ad per ad
+}
+
 export interface PushRefs {
   /** local id → human label, for showing in UI */
   campaign: { localId: string; label: string };

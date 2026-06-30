@@ -4,6 +4,7 @@
 // Pipeboard quota every time it opens.
 
 import { getSupabase } from './supabaseClient';
+import { logPipeboardCalls } from './pipeboardQuota';
 
 export interface MetaPage { id: string; name: string; accessTokenAvailable?: boolean }
 export interface MetaPixel { id: string; name: string; code?: string; lastFiredAt?: string }
@@ -57,6 +58,9 @@ async function callFetchApi(action: 'pages' | 'pixels' | 'instagram-accounts', a
     throw new Error(`Server trả response không phải JSON (${res.status}, ${text.slice(0, 100)}).`);
   }
   if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  if (body.pipeboardCallsUsed) {
+    logPipeboardCalls(`${action}:${accountId.slice(0, 12)}`, body.pipeboardCallsUsed);
+  }
   return body;
 }
 
@@ -124,6 +128,9 @@ export async function syncStatusesFromMeta(args: {
     throw new Error(`Server trả response không phải JSON (${res.status}).`);
   }
   if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  if (body.pipeboardCallsUsed) {
+    logPipeboardCalls(`sync:${args.metaCampaignId?.slice(-8) || '?'}`, body.pipeboardCallsUsed);
+  }
   return body as MetaStatusReport;
 }
 

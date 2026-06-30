@@ -128,25 +128,33 @@ async function handlerImpl(req: Request): Promise<Response> {
   const pipeboardToken = process.env.PIPEBOARD_API_TOKEN;
   if (!pipeboardToken) return bad('Server thiếu PIPEBOARD_API_TOKEN', 500);
 
+  // Wrap to count calls for client-side quota tracking. Free Pipeboard tier
+  // is 30 calls/week so we expose exact usage on every response.
+  let pipeboardCallsUsed = 0;
+  const trackedCall = async <T>(tool: string, args: any) => {
+    pipeboardCallsUsed++;
+    return callPipeboardTool<T>(tool, args, pipeboardToken);
+  };
+
   try {
     switch (body.action) {
       case 'pages': {
-        const out = await callPipeboardTool('get_account_pages', {
+        const out = await trackedCall('get_account_pages', {
           account_id: body.accountId,
-        }, pipeboardToken);
-        return json({ pages: normalizePages(out) });
+        });
+        return json({ pages: normalizePages(out), pipeboardCallsUsed });
       }
       case 'pixels': {
-        const out = await callPipeboardTool('get_pixels', {
+        const out = await trackedCall('get_pixels', {
           account_id: body.accountId,
-        }, pipeboardToken);
-        return json({ pixels: normalizePixels(out) });
+        });
+        return json({ pixels: normalizePixels(out), pipeboardCallsUsed });
       }
       case 'instagram-accounts': {
-        const out = await callPipeboardTool('get_instagram_accounts', {
+        const out = await trackedCall('get_instagram_accounts', {
           account_id: body.accountId,
-        }, pipeboardToken);
-        return json({ instagramAccounts: normalizeIgAccounts(out) });
+        });
+        return json({ instagramAccounts: normalizeIgAccounts(out), pipeboardCallsUsed });
       }
       case 'sync-statuses': {
         // Pull live status from Meta for whatever Meta IDs the FE passed.
@@ -165,9 +173,9 @@ async function handlerImpl(req: Request): Promise<Response> {
 
         if (body.metaCampaignId) {
           try {
-            const r: any = await callPipeboardTool('get_campaign_details', {
+            const r: any = await trackedCall('get_campaign_details', {
               campaign_id: body.metaCampaignId,
-            }, pipeboardToken);
+            });
             out.campaign = { id: body.metaCampaignId, ...pickStatus(r) };
           } catch (e: any) {
             out.campaign = { id: body.metaCampaignId, status: 'error:' + (e?.message || '?') };
@@ -175,7 +183,7 @@ async function handlerImpl(req: Request): Promise<Response> {
         }
         for (const id of body.metaAdsetIds || []) {
           try {
-            const r: any = await callPipeboardTool('get_adset_details', { adset_id: id }, pipeboardToken);
+            const r: any = await trackedCall('get_adset_details', { adset_id: id });
             out.adsets.push({ id, ...pickStatus(r) });
           } catch (e: any) {
             out.adsets.push({ id, status: 'error:' + (e?.message || '?') });
@@ -183,13 +191,13 @@ async function handlerImpl(req: Request): Promise<Response> {
         }
         for (const id of body.metaAdIds || []) {
           try {
-            const r: any = await callPipeboardTool('get_ad_details', { ad_id: id }, pipeboardToken);
+            const r: any = await trackedCall('get_ad_details', { ad_id: id });
             out.ads.push({ id, ...pickStatus(r) });
           } catch (e: any) {
             out.ads.push({ id, status: 'error:' + (e?.message || '?') });
           }
         }
-        return json(out);
+        return json({ ...out, pipeboardCallsUsed });
       }
       default:
         return bad(`Unknown action: ${body.action}`);

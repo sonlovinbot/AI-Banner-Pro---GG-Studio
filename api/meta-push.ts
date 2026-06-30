@@ -55,6 +55,9 @@ interface PushResponse {
   warnings?: string[];
   payload?: any;
   message?: string;
+  /** Number of Pipeboard MCP calls this request actually made — client uses
+   *  this to maintain a local weekly quota counter (free tier = 30/week). */
+  pipeboardCallsUsed?: number;
 }
 
 function json(body: any, status = 200): Response {
@@ -315,6 +318,7 @@ async function handlerImpl(req: Request): Promise<Response> {
 
   // ────────── Real push via Pipeboard MCP ──────────
   const steps: PushResultPerStep[] = [];
+  let pipeboardCallsUsed = 0;
   const resolved = resolveMetaAccount(campaign, metaAccounts);
   const accountId = resolved?.accountId || campaign.metaAccountId || '';
   if (!accountId) {
@@ -324,6 +328,13 @@ async function handlerImpl(req: Request): Promise<Response> {
     } as PushResponse, 400);
   }
   const imageHashByBanner: Record<string, string> = {};
+
+  // Wrap callPipeboardTool to bump our call counter — server-side count we
+  // return in the response so the client can update its quota meter.
+  const trackedCall = async <T>(tool: string, args: any) => {
+    pipeboardCallsUsed++;
+    return callPipeboardTool<T>(tool, args, pipeboardToken);
+  };
 
   // Pipeboard tool responses don't have a fixed shape across versions. This
   // helper pulls the "id" field from common variants so each step can record
@@ -342,11 +353,11 @@ async function handlerImpl(req: Request): Promise<Response> {
   // Step 1: Upload images via Pipeboard
   for (const u of payload.uploads) {
     try {
-      const out = await callPipeboardTool('upload_ad_image', {
+      const out = await trackedCall('upload_ad_image', {
         account_id: accountId,
         image_url: u.sourceUrl,
         name: u.fileName,
-      }, pipeboardToken);
+      });
       const hash = extractImageHash(out, u.fileName);
       if (!hash) throw new Error(`No image_hash in response: ${JSON.stringify(out).slice(0, 200)}`);
       imageHashByBanner[u.localBannerId] = hash;
@@ -367,10 +378,10 @@ async function handlerImpl(req: Request): Promise<Response> {
   // Step 2: Create campaign via Pipeboard
   let metaCampaignId: string;
   try {
-    const out = await callPipeboardTool('create_campaign', {
+    const out = await trackedCall('create_campaign', {
       account_id: accountId,
       ...payload.campaign.body,
-    }, pipeboardToken);
+    });
     const id = extractId(out);
     if (!id) throw new Error(`No campaign id in response: ${JSON.stringify(out).slice(0, 200)}`);
     metaCampaignId = id;
@@ -396,11 +407,11 @@ async function handlerImpl(req: Request): Promise<Response> {
   const metaAdsetByLocal: Record<string, string> = {};
   for (const a of payload.adSets) {
     try {
-      const out = await callPipeboardTool('create_adset', {
+      const out = await trackedCall('create_adset', {
         account_id: accountId,
         ...a.body,
         campaign_id: metaCampaignId,
-      }, pipeboardToken);
+      });
       const id = extractId(out);
       if (!id) throw new Error(`No adset id in response: ${JSON.stringify(out).slice(0, 200)}`);
       metaAdsetByLocal[a.localId] = id;
@@ -446,7 +457,7 @@ async function handlerImpl(req: Request): Promise<Response> {
         if (creativeArgs[k] == null) delete creativeArgs[k];
       }
 
-      const out = await callPipeboardTool('create_ad_creative', creativeArgs, pipeboardToken);
+      const out = await trackedCall('create_ad_creative', creativeArgs);
       const id = extractId(out);
       if (!id) throw new Error(`No creative id in response: ${JSON.stringify(out).slice(0, 200)}`);
       metaCreativeByLocal[c.localId] = id;
@@ -468,13 +479,13 @@ async function handlerImpl(req: Request): Promise<Response> {
       const metaCreativeId = metaCreativeByLocal[ad.localCreativeId];
       if (!metaAdsetId) throw new Error(`No meta adset for local ${ad.localAdsetId}`);
       if (!metaCreativeId) throw new Error(`No meta creative for local ${ad.localCreativeId}`);
-      const out = await callPipeboardTool('create_ad', {
+      const out = await trackedCall('create_ad', {
         account_id: accountId,
         name: ad.body.name,
         adset_id: metaAdsetId,
         creative_id: metaCreativeId,
         status: ad.body.status,
-      }, pipeboardToken);
+      });
       const id = extractId(out);
       if (!id) throw new Error(`No ad id in response: ${JSON.stringify(out).slice(0, 200)}`);
       steps.push({ step: 'ad', status: 'ok', localId: ad.localId, metaId: id });
@@ -520,6 +531,7 @@ async function handlerImpl(req: Request): Promise<Response> {
     steps,
     errors: failed.map(s => `${s.step} ${s.localId || ''}: ${s.error}`),
     warnings: warnings.length ? warnings : undefined,
+    pipeboardCallsUsed,
   };
   return json(resp);
 }

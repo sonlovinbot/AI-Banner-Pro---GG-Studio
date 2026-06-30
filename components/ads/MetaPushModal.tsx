@@ -6,12 +6,14 @@ import {
 import { AdCampaign, AdSet, AdCreative, HistoryItem, MetaAccount } from '../../types';
 import {
   buildMetaPayload, buildMcpAgentPrompt, validateForPush,
+  estimatePipeboardCalls,
   ValidationIssue, MetaPushPayload,
 } from '../../services/metaPushPayload';
 import { pushCampaign, PushResult, PushStepResult, EndpointUnavailableError } from '../../services/metaPushClient';
 import { saveCreativeToCloud } from '../../services/adCreativeService';
 import { saveAdSetToCloud } from '../../services/adSetService';
 import { readMetaCache } from '../../services/metaFetchService';
+import { getWeeklyUsage, isMetaPushEnabled } from '../../services/pipeboardQuota';
 
 interface Props {
   campaign: AdCampaign;
@@ -213,6 +215,14 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
     [campaign, campaignAdSets, creatives, banners, metaAccounts],
   );
 
+  // Pre-flight: how many Pipeboard calls this push will burn + current quota.
+  // Read fresh on every render so the user sees up-to-date numbers.
+  const estimatedCalls = useMemo(() => estimatePipeboardCalls(payload), [payload]);
+  const quota = getWeeklyUsage();
+  const quotaAfter = quota.used + estimatedCalls;
+  const willExceedQuota = quotaAfter > quota.limit;
+  const pushEnabled = isMetaPushEnabled();
+
   const agentPrompt = useMemo(
     () => buildMcpAgentPrompt(payload),
     [payload],
@@ -332,6 +342,30 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
               Mọi push từ app này lên Meta đều ở trạng thái <b>PAUSED</b>. Bạn review + activate thủ công trên Meta Ads Manager.
             </span>
           </div>
+
+          {/* Pre-flight quota line — exact cost + remaining budget. */}
+          <div className={`text-xs px-3 py-2 rounded-lg border flex items-center justify-between gap-3 ${
+            willExceedQuota ? 'status-danger' : quotaAfter >= quota.limit * 0.8 ? 'status-warning' : 'status-info'
+          }`}>
+            <span>
+              Push này sẽ dùng <b>{estimatedCalls}</b> Pipeboard call
+              {payload.uploads.length > 0 && ` (${payload.uploads.length} upload + 1 campaign + ${payload.adSets.length} adset + ${payload.creatives.length} creative + ${payload.ads.length} ad)`}.
+            </span>
+            <span className="shrink-0 font-mono">
+              Tuần này: {quota.used} → <b>{quotaAfter}</b> / {quota.limit}
+            </span>
+          </div>
+          {willExceedQuota && (
+            <div className="text-xs status-danger border px-3 py-2 rounded-lg">
+              ⚠️ Vượt quota tuần này. Pipeboard sẽ reject một số call. Nâng plan hoặc đợi đến reset.
+            </div>
+          )}
+          {!pushEnabled && (
+            <div className="text-xs status-warning border px-3 py-2 rounded-lg">
+              🔒 Push Meta đang TẮT (Settings → Meta Accounts). Chỉ dry-run được phép.
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted">
               Push qua Pipeboard MCP — cần env <code className="text-fg bg-raised px-1 py-0.5 rounded">PIPEBOARD_API_TOKEN</code> ở Vercel. Không token → server tự dry-run.
@@ -348,12 +382,19 @@ export const MetaPushModal: React.FC<Props> = ({ campaign, adSets, creatives, ba
               </button>
               <button
                 onClick={() => {
-                  if (!report.canPush) return;
-                  if (!confirm('Push lên Meta (PAUSED)?\nTất cả ad sẽ tạo ở trạng thái paused — bạn vào Meta Ads Manager review + activate thủ công.')) return;
+                  if (!report.canPush || !pushEnabled) return;
+                  const msg = `Push lên Meta (PAUSED)?\n` +
+                    `Sẽ dùng ${estimatedCalls} Pipeboard call (tuần này: ${quota.used}→${quotaAfter}/${quota.limit}).\n` +
+                    (willExceedQuota ? `\n⚠️ VƯỢT QUOTA — một số call có thể bị reject.\n` : '') +
+                    `\nTất cả ad sẽ tạo ở trạng thái paused — bạn review + activate trên Meta Ads Manager.`;
+                  if (!confirm(msg)) return;
                   runPush(false);
                 }}
-                disabled={pushing !== 'idle' || !report.canPush}
+                disabled={pushing !== 'idle' || !report.canPush || !pushEnabled}
                 className="text-sm px-4 py-2 rounded-lg bg-brand hover:bg-brand-dark text-white font-semibold flex items-center gap-2 disabled:opacity-50"
+                title={!pushEnabled ? 'Push Meta đang tắt — bật ở Settings'
+                     : !report.canPush ? 'Còn validation lỗi — sửa trước'
+                     : `Push ${estimatedCalls} call lên Meta`}
               >
                 {pushing === 'real' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                 Push to Meta (PAUSED)

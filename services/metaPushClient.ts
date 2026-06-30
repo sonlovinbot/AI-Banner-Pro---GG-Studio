@@ -3,6 +3,7 @@
 // "push" returns actual Meta IDs + per-step results.
 
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { logPipeboardCalls } from './pipeboardQuota';
 
 export interface PushStepResult {
   step: 'upload' | 'campaign' | 'adset' | 'creative' | 'ad';
@@ -23,6 +24,8 @@ export interface PushResult {
   warnings?: string[];
   payload?: any;
   message?: string;
+  /** How many Pipeboard tool calls the server made on our behalf. */
+  pipeboardCallsUsed?: number;
 }
 
 async function getAuthHeader(): Promise<string> {
@@ -76,7 +79,11 @@ export async function pushCampaign(
   const looksLikePushResult =
     data && typeof data.mode === 'string' && typeof data.success === 'boolean';
   if (looksLikePushResult) {
-    return data as PushResult;
+    const result = data as PushResult;
+    if (result.pipeboardCallsUsed) {
+      logPipeboardCalls(`push:${campaignId.slice(0, 8)}`, result.pipeboardCallsUsed);
+    }
+    return result;
   }
   if (!res.ok) {
     throw new Error(data?.error || `Push failed (${res.status})`);
