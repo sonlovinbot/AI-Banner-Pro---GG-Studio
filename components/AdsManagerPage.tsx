@@ -14,6 +14,7 @@ import { StudioChat } from './ads/StudioChat';
 import { BannerPickerModal } from './ads/BannerPickerModal';
 import { QueueTab } from './ads/QueueTab';
 import { CampaignsTab } from './ads/CampaignsTab';
+import { AnalyticsTab } from './ads/AnalyticsTab';
 import { CreativeFinalizeModal } from './ads/CreativeFinalizeModal';
 import { peekStudioHandoff, setStudioHandoff } from '../services/studioHandoffService';
 import {
@@ -253,11 +254,7 @@ export const AdsManagerPage: React.FC<Props> = ({ onNavigate, initialTab }) => {
         )}
 
         {tab === 'analytics' && (
-          <PlaceholderTab
-            icon={<BarChart3 size={48} className="text-success" />}
-            title="Analytics (Sprint 6)"
-            description="CTR / CPC / ROAS đọc từ Meta qua MCP. Winner picker auto chọn top 20% perf."
-          />
+          <AnalyticsTab campaigns={campaigns} />
         )}
       </div>
 

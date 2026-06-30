@@ -143,3 +143,64 @@ export function mapMetaStatusToApp(meta: string | undefined): 'active' | 'paused
   if (s === 'ARCHIVED' || s === 'DELETED') return 'archived';
   return undefined;
 }
+
+// ──────────── Insights (analytics) ────────────
+
+export interface InsightRow {
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  adId?: string;
+  adName?: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  reach: number;
+  frequency: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  purchases?: number;
+  leads?: number;
+  linkClicks?: number;
+  registrations?: number;
+  addToCart?: number;
+  purchaseValue?: number;
+  roas?: number;
+}
+
+export type InsightLevel = 'campaign' | 'adset' | 'ad' | 'account';
+export type InsightDatePreset =
+  | 'today' | 'yesterday' | 'last_3d' | 'last_7d' | 'last_14d' | 'last_30d'
+  | 'last_90d' | 'this_month' | 'last_month' | 'lifetime';
+
+export async function fetchInsights(args: {
+  accountId: string;
+  level?: InsightLevel;
+  datePreset?: InsightDatePreset;
+}): Promise<InsightRow[]> {
+  const { data: { session } } = await getSupabase().auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Chưa đăng nhập');
+  const res = await fetch('/api/meta-fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      action: 'insights',
+      accountId: args.accountId,
+      insightsLevel: args.level || 'campaign',
+      insightsDatePreset: args.datePreset || 'last_7d',
+    }),
+  });
+  const text = await res.text();
+  let body: any;
+  try { body = JSON.parse(text); } catch {
+    throw new Error(`Server trả non-JSON (${res.status})`);
+  }
+  if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  if (body.pipeboardCallsUsed) {
+    logPipeboardCalls(`insights:${args.datePreset || 'last_7d'}`, body.pipeboardCallsUsed);
+  }
+  return (body.rows || []) as InsightRow[];
+}

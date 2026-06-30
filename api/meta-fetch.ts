@@ -15,12 +15,16 @@ import { callPipeboardTool, PipeboardError } from './_lib/pipeboardClient';
 export const config = { runtime: 'edge' };
 
 interface FetchRequestBody {
-  action: 'pages' | 'pixels' | 'instagram-accounts' | 'sync-statuses';
+  action: 'pages' | 'pixels' | 'instagram-accounts' | 'sync-statuses' | 'insights';
   accountId: string;
   /** Used by sync-statuses — pull statuses for this campaign's ids. */
   metaCampaignId?: string;
   metaAdsetIds?: string[];
   metaAdIds?: string[];
+  /** Used by insights. */
+  insightsObjectIds?: string[];  // campaign / adset / ad ids
+  insightsLevel?: 'campaign' | 'adset' | 'ad' | 'account';
+  insightsDatePreset?: string;   // today, yesterday, last_7d, last_30d, lifetime, ...
 }
 
 function json(body: any, status = 200): Response {
@@ -107,6 +111,71 @@ function normalizeIgAccounts(raw: any): MetaIgAccount[] {
   })).filter(a => a.id);
 }
 
+interface InsightRow {
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  adId?: string;
+  adName?: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  reach: number;
+  frequency: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  /** Conversion counts pulled out of Meta's `actions` array by type. */
+  purchases?: number;
+  leads?: number;
+  linkClicks?: number;
+  registrations?: number;
+  addToCart?: number;
+  /** Revenue from `action_values` array. */
+  purchaseValue?: number;
+  /** ROAS = purchaseValue / spend (when both > 0). */
+  roas?: number;
+}
+
+function normalizeInsights(raw: any): InsightRow[] {
+  const list = extractList(raw, ['data', 'insights']);
+  return list.map((r: any) => {
+    const num = (v: any) => Number(v || 0);
+    const actions: Array<{ action_type: string; value: string }> = r.actions || [];
+    const actionValues: Array<{ action_type: string; value: string }> = r.action_values || [];
+    const actionMap: Record<string, number> = {};
+    for (const a of actions) actionMap[a.action_type] = num(a.value);
+    const valueMap: Record<string, number> = {};
+    for (const a of actionValues) valueMap[a.action_type] = num(a.value);
+    const spend = num(r.spend);
+    const purchaseValue = valueMap['purchase'] || valueMap['offsite_conversion.fb_pixel_purchase'] || 0;
+    return {
+      campaignId: r.campaign_id || undefined,
+      campaignName: r.campaign_name || undefined,
+      adsetId: r.adset_id || undefined,
+      adsetName: r.adset_name || undefined,
+      adId: r.ad_id || undefined,
+      adName: r.ad_name || undefined,
+      impressions: num(r.impressions),
+      clicks: num(r.clicks),
+      spend,
+      reach: num(r.reach),
+      frequency: num(r.frequency),
+      ctr: num(r.ctr),
+      cpc: num(r.cpc),
+      cpm: num(r.cpm),
+      purchases: actionMap['purchase'] || actionMap['offsite_conversion.fb_pixel_purchase'] || undefined,
+      leads:     actionMap['lead']     || actionMap['offsite_conversion.fb_pixel_lead']     || undefined,
+      linkClicks: actionMap['link_click'] || undefined,
+      registrations: actionMap['complete_registration'] || actionMap['offsite_conversion.fb_pixel_complete_registration'] || undefined,
+      addToCart: actionMap['add_to_cart'] || actionMap['offsite_conversion.fb_pixel_add_to_cart'] || undefined,
+      purchaseValue: purchaseValue || undefined,
+      roas: purchaseValue > 0 && spend > 0 ? purchaseValue / spend : undefined,
+    };
+  });
+}
+
 async function handlerImpl(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (req.method !== 'POST') return bad('Method not allowed', 405);
@@ -155,6 +224,22 @@ async function handlerImpl(req: Request): Promise<Response> {
           account_id: body.accountId,
         });
         return json({ instagramAccounts: normalizeIgAccounts(out), pipeboardCallsUsed });
+      }
+      case 'insights': {
+        // Account-level rollup with per-campaign breakdown. One Pipeboard
+        // call returns metrics for every campaign in the date range.
+        const fields = [
+          'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name',
+          'impressions', 'clicks', 'spend', 'reach', 'frequency',
+          'ctr', 'cpc', 'cpm', 'actions', 'action_values',
+        ];
+        const out: any = await trackedCall('get_insights', {
+          object_id: body.accountId,
+          level: body.insightsLevel || 'campaign',
+          date_preset: body.insightsDatePreset || 'last_7d',
+          fields,
+        });
+        return json({ rows: normalizeInsights(out), pipeboardCallsUsed });
       }
       case 'sync-statuses': {
         // Pull live status from Meta for whatever Meta IDs the FE passed.
