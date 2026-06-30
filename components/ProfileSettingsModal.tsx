@@ -241,11 +241,11 @@ const ProfileSection: React.FC<{ user?: User }> = ({ user }) => {
 // ────────────── API Keys ──────────────
 
 const KeysSection: React.FC = () => {
-  const [showGoogle, setShowGoogle] = useState(false);
   const [showCoachio, setShowCoachio] = useState(false);
-
-  const googleSaved = !!getGeminiApiKey();
   const coachioSaved = !!getCoachioApiKey();
+  // Google Gemini path hidden — Coachio is the only banner gen provider now.
+  // Hidden state still tracks the legacy KeyCard but never opens.
+  void getGeminiApiKey;
 
   return (
     <div className="space-y-3">
@@ -253,19 +253,6 @@ const KeysSection: React.FC = () => {
         Sau khi bấm <span className="text-fg font-semibold">Lưu</span>, box sẽ tự thu lại.
         Bấm vào tiêu đề để mở lại sửa key.
       </p>
-
-      <KeyCard
-        accent="indigo"
-        title="Google Gemini"
-        subtitle="Gemini backend cho banner generation"
-        helpUrl="https://aistudio.google.com/apikey"
-        helpLabel="Lấy key từ AI Studio"
-        savedBadge={googleSaved}
-        expanded={showGoogle}
-        onToggle={() => setShowGoogle(s => !s)}
-      >
-        <GeminiForm onSaved={() => setShowGoogle(false)} />
-      </KeyCard>
 
       <KeyCard
         accent="orange"

@@ -39,7 +39,9 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
   const [generated, setGenerated] = useState<{ imageUrl: string; promptUsed: string; duration: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const backend = getActiveBackend();
+  // Gemini path hidden — Coachio only.
+  const backend = 'coachio' as const;
+  void getActiveBackend;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -184,7 +186,7 @@ export const HistoryEditModal: React.FC<HistoryEditModalProps> = ({ item, onClos
                 )}
               </h3>
               <p className="text-[11px] text-subtle">
-                Sửa prompt + thêm ảnh tham chiếu → tạo lại bằng backend đang active ({backend === 'coachio' ? 'Coachio' : 'Gemini'}).
+                Sửa prompt + thêm ảnh tham chiếu → tạo lại bằng Coachio.
                 {item.parentId && <span className="text-purple-300/80"> · Chỉnh sửa từ banner gốc <span className="font-mono">{item.parentId.slice(0,6)}</span></span>}
               </p>
             </div>

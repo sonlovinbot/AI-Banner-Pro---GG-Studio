@@ -138,7 +138,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [results, setResults] = useState<GeneratedBanner[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [backend, setBackendState] = useState<BackendType>(getActiveBackend());
+  // Gemini backend hidden — Coachio is the only generation path now.
+  // backend state retained for the existing call-site switch; locked to 'coachio'.
+  const [backend, setBackendState] = useState<BackendType>('coachio');
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<Record<string, string>>({});
   const [refLibrary, setRefLibrary] = useState<LibraryImage[]>([]);
@@ -239,12 +241,15 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   };
 
   const hasCoachioKey = !!getCoachioApiKey();
+  // Gemini path locked off — these are kept for the unreachable code branches
+  // that still type-check the legacy flow. Re-enable by un-hiding the backend
+  // selector and calling setBackend('gemini').
   const hasGoogleKey = !!getGeminiApiKey() || (import.meta.env.VITE_GEMINI_API_KEY && import.meta.env.VITE_GEMINI_API_KEY !== 'your_api_key_here');
-
   const setBackend = (b: BackendType) => {
     setBackendState(b);
     setActiveBackend(b);
   };
+  void hasGoogleKey; void setBackend;
 
   const processFile = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -686,48 +691,18 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-          {/* Backend Selection */}
-          <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Zap size={14} /> Backend
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
+          {/* Backend: Coachio only — Gemini path hidden but kept in code for future re-enable */}
+          {!hasCoachioKey && (
+            <div className="status-warning border rounded-md px-3 py-2.5 text-xs flex items-center justify-between gap-2">
+              <span>Chưa có Coachio API key — bắt buộc để generate.</span>
               <button
-                onClick={() => setBackend('gemini')}
-                className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
-                  backend === 'gemini'
-                    ? 'bg-brand border-brand text-white'
-                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
-                }`}
+                onClick={() => setShowApiKeySettings(true)}
+                className="text-xs font-semibold underline hover:no-underline shrink-0"
               >
-                Gemini Direct
-                {hasGoogleKey && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full"></span>
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  if (!hasCoachioKey) {
-                    setShowApiKeySettings(true);
-                  } else {
-                    setBackend('coachio');
-                  }
-                }}
-                className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
-                  backend === 'coachio'
-                    ? 'bg-brand border-brand text-white'
-                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
-                }`}
-              >
-                Coachio AI
-                {hasCoachioKey && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full"></span>
-                )}
+                Thêm key
               </button>
             </div>
-          </div>
-
-          <div className="h-px bg-raised" />
+          )}
 
           {/* Inputs */}
           <div>
@@ -1148,7 +1123,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               </>
             ) : (
               <>
-                <Wand2 size={20} /> Generate via {backend === 'coachio' ? (coachioModel === 'gpt_image_2' ? 'GPT Image 2' : 'Nano Banana Pro') : 'Gemini'}
+                <Wand2 size={20} /> Generate via {coachioModel === 'gpt_image_2' ? 'GPT Image 2' : 'Nano Banana Pro'}
               </>
             )}
           </button>

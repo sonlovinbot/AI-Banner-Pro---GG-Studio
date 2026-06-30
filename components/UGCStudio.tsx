@@ -49,7 +49,8 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [results, setResults] = useState<GeneratedBanner[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [backend, setBackendState] = useState<BackendType>(getActiveBackend());
+  // Gemini path hidden — Coachio only. State kept for unreachable legacy branches.
+  const [backend, setBackendState] = useState<BackendType>('coachio');
   const [showApiKeySettings, setShowApiKeySettings] = useState(false);
   const [, setGenerationProgress] = useState<Record<string, string>>({});
 
@@ -389,38 +390,18 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Backend */}
-          <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Zap size={14} /> Backend
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
+          {/* Backend selector hidden — Coachio only. Warn if key missing. */}
+          {!hasCoachioKey && (
+            <div className="status-warning border rounded-md px-3 py-2.5 text-xs flex items-center justify-between gap-2">
+              <span>Chưa có Coachio API key — bắt buộc để generate UGC.</span>
               <button
-                onClick={() => setBackend('gemini')}
-                className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
-                  backend === 'gemini'
-                    ? 'bg-brand border-brand text-white'
-                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
-                }`}
+                onClick={() => setShowApiKeySettings(true)}
+                className="text-xs font-semibold underline hover:no-underline shrink-0"
               >
-                Gemini Direct
-                {hasGoogleKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full" />}
-              </button>
-              <button
-                onClick={() => hasCoachioKey ? setBackend('coachio') : setShowApiKeySettings(true)}
-                className={`text-xs py-2.5 px-3 rounded-md border text-center transition-all relative ${
-                  backend === 'coachio'
-                    ? 'bg-brand border-brand text-white'
-                    : 'bg-raised border-line-strong text-muted hover:bg-raised-2'
-                }`}
-              >
-                Coachio AI
-                {hasCoachioKey && <span className="absolute -top-1 -right-1 w-2 h-2 bg-success-fg rounded-full" />}
+                Thêm key
               </button>
             </div>
-          </div>
-
-          <div className="h-px bg-raised" />
+          )}
 
           {/* Assets */}
           <div>
