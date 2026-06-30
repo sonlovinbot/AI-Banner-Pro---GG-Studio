@@ -40,7 +40,16 @@ export async function scrapeUrl(url: string): Promise<ScrapeResult> {
   try { body = JSON.parse(text); } catch {
     throw new Error(`Server trả non-JSON (${res.status})`);
   }
-  if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+  if (!res.ok || body.error) {
+    // If the backend included diagnostic info (key source / masking), surface
+    // it inline so the user can see WHICH key was tried + format check.
+    let msg = body.error || `HTTP ${res.status}`;
+    if (body.diagnostic) {
+      const d = body.diagnostic;
+      msg += `\n[diag] email=${d.user_email}, admin=${d.is_admin}, src=${d.key_source}, key=${d.key_masked}, format_ok=${d.key_looks_valid_format}`;
+    }
+    throw new Error(msg);
+  }
   return body as ScrapeResult;
 }
 

@@ -68,20 +68,38 @@ export default async function handler(req: Request): Promise<Response> {
   if (!url) return bad('url required');
   try { new URL(url); } catch { return bad('Invalid URL format'); }
 
-  // Resolve Firecrawl key per user.
+  // Resolve Firecrawl key per user. Trim whitespace/quotes that Vercel env
+  // pasting often leaves behind — Firecrawl rejects keys with surrounding chars.
   let apiKey: string | undefined;
-  if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) {
-    apiKey = process.env.FIRECRAWL_API_KEY;
-    if (!apiKey) return bad('Server thiếu FIRECRAWL_API_KEY — admin add ở Vercel env vars', 500);
+  let keySource: 'admin-env' | 'user-db' | 'none' = 'none';
+
+  const userEmail = user.email?.toLowerCase() || '';
+  const isAdmin = userEmail && ADMIN_EMAILS.includes(userEmail);
+
+  if (isAdmin) {
+    const raw = process.env.FIRECRAWL_API_KEY;
+    apiKey = raw ? raw.trim().replace(/^["']|["']$/g, '') : undefined;
+    keySource = apiKey ? 'admin-env' : 'none';
+    if (!apiKey) {
+      return bad('Server thiếu FIRECRAWL_API_KEY — admin add ở Vercel env vars', 500);
+    }
   } else {
-    apiKey = (await getUserFirecrawlKey(user.id)) || undefined;
+    const raw = await getUserFirecrawlKey(user.id);
+    apiKey = raw ? raw.trim() : undefined;
+    keySource = apiKey ? 'user-db' : 'none';
     if (!apiKey) {
       return bad(
-        'Bạn chưa nhập Firecrawl API key. Mở Settings → API Keys → Firecrawl → add key.',
+        `Bạn chưa nhập Firecrawl API key. Mở Settings → API Keys → Firecrawl → add key. (email='${userEmail}', detected admin=${isAdmin})`,
         402,
       );
     }
   }
+
+  // Quick sanity check on format — Firecrawl keys start with "fc-"
+  const keyLooksValid = apiKey.startsWith('fc-') && apiKey.length >= 20;
+  const maskedKey = apiKey.length >= 8
+    ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)} (len=${apiKey.length})`
+    : `(len=${apiKey.length})`;
 
   // Call Firecrawl
   let scrapeRes: Response;
@@ -111,9 +129,19 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   if (!scrapeRes.ok) {
+    // Surface diagnostic info so we can tell whether the wrong key was sent,
+    // env var wasn't set, or the key has been revoked.
     return json({
-      error: data?.error || `Firecrawl ${scrapeRes.status}`,
+      error: data?.error || data?.message || `Firecrawl ${scrapeRes.status}`,
       detail: data,
+      diagnostic: {
+        firecrawl_status: scrapeRes.status,
+        user_email: userEmail,
+        is_admin: isAdmin,
+        key_source: keySource,
+        key_masked: maskedKey,
+        key_looks_valid_format: keyLooksValid,
+      },
     }, scrapeRes.status);
   }
 
