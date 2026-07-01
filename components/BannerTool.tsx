@@ -11,6 +11,8 @@ import {
 } from '../services/refBannersService';
 import { BrandBrief } from '../types';
 import { listSelectedBriefsForBrand } from '../services/brandBriefService';
+import { BrandRow } from './banner/BrandRow';
+import { BriefsModal } from './banner/BriefsModal';
 import {
   getGeminiApiKey,
   getActiveBackend,
@@ -139,6 +141,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   // per-brief which to use as content variants in the gen plan.
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
+  const [showBriefsModal, setShowBriefsModal] = useState(false);
   const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
@@ -848,61 +851,20 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
           <div className="h-px bg-raised" />
 
-          {/* Configuration */}
+          {/* Brand — compact row + BriefsModal trigger */}
+          <BrandRow
+            projects={brandProjects}
+            activeBrandId={activeBrandId}
+            onApply={applyBrandProject}
+            onClear={clearBrandSelection}
+            onNavigate={onNavigate}
+            briefsSelectedCount={enabledBriefIds.size}
+            briefsTotalCount={brandBriefs.length}
+            onOpenBriefsModal={() => setShowBriefsModal(true)}
+          />
+
+          {/* Configuration wrapper — will be dismantled by later sprints */}
           <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Settings2 size={14} /> Configuration
-            </h2>
-
-            {/* Brand Selector */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                <Palette size={14} /> Brand
-              </label>
-              {brandProjects.length === 0 ? (
-                <button
-                  onClick={() => onNavigate('brand-style')}
-                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-brand/50 hover:text-brand text-left transition-colors"
-                >
-                  + Tạo Brand Style để sử dụng nhanh
-                </button>
-              ) : (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <select
-                    value={activeBrandId}
-                    onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 min-w-0 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-brand"
-                  >
-                    <option value="">— Không dùng brand —</option>
-                    {brandProjects.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                  {activeBrandId && (
-                    <button
-                      onClick={clearBrandSelection}
-                      className="shrink-0 p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg"
-                      title="Bỏ chọn brand"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => onNavigate('brand-style')}
-                    className="shrink-0 p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg border border-line-strong"
-                    title="Quản lý brand projects"
-                  >
-                    <Settings2 size={14} />
-                  </button>
-                </div>
-              )}
-              {activeBrandId && (
-                <p className="text-[10px] text-brand/80 mt-1.5">
-                  Đã áp dụng: {brandProjects.find(p => p.id === activeBrandId)?.name}
-                </p>
-              )}
-            </div>
-
             {/* Model Selection (only for Gemini) */}
             {backend === 'gemini' && (
               <div className="mb-4">
@@ -966,64 +928,6 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* Brand briefs picker — only shown in multi mode when a brand is
-                applied AND that brand has selected briefs */}
-            {multiContent && brandBriefs.length > 0 && (
-              <div className="mb-4 bg-canvas border border-brand/30 rounded-md p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-fg">
-                    Brand briefs ({enabledBriefIds.size}/{brandBriefs.length} dùng)
-                  </p>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setEnabledBriefIds(new Set(brandBriefs.map(b => b.id)))}
-                      className="text-[10px] text-muted hover:text-fg"
-                    >
-                      Tất cả
-                    </button>
-                    <span className="text-subtle">·</span>
-                    <button
-                      type="button"
-                      onClick={() => setEnabledBriefIds(new Set())}
-                      className="text-[10px] text-muted hover:text-fg"
-                    >
-                      Bỏ hết
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {brandBriefs.map(b => {
-                    const on = enabledBriefIds.has(b.id);
-                    return (
-                      <label key={b.id} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs cursor-pointer ${on ? 'bg-brand/10' : 'hover:bg-raised'}`}>
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={(e) => {
-                            const next = new Set(enabledBriefIds);
-                            if (e.target.checked) next.add(b.id); else next.delete(b.id);
-                            setEnabledBriefIds(next);
-                          }}
-                          className="mt-0.5 shrink-0 accent-brand"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-fg truncate">{b.title}</p>
-                          {b.headline && <p className="text-[10px] text-muted truncate">H: {b.headline}</p>}
-                        </div>
-                        <span className="text-[9px] font-mono text-subtle uppercase shrink-0 self-center">
-                          {b.briefType.split('-')[0]}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-subtle">
-                  Mỗi brief tick = 1 content variant. Tổng = (manual contents + briefs đã tick) × phiên bản.
-                </p>
               </div>
             )}
 
@@ -1331,6 +1235,17 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       {/* API Key Settings Modal */}
       {showApiKeySettings && (
         <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />
+      )}
+
+      {/* Brand Briefs picker (Sprint H1) */}
+      {showBriefsModal && (
+        <BriefsModal
+          briefs={brandBriefs}
+          enabledIds={enabledBriefIds}
+          onChangeEnabled={setEnabledBriefIds}
+          onClose={() => setShowBriefsModal(false)}
+          onNavigateToBrandStyle={onNavigate}
+        />
       )}
 
       {/* Brand Content Library Modal */}
