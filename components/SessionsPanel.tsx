@@ -30,6 +30,12 @@ interface Props {
   onOpenFullHistory?: () => void;
   /** Cap number of sessions shown to keep the panel scannable. */
   maxSessions?: number;
+
+  /** Full-height mode — panel expands to fill available vertical space.
+   *  Used when no current generation results are showing, so past sessions
+   *  become the primary content of the workspace. Bigger thumbnails, grid
+   *  mode default, no scroll cap. */
+  fullHeight?: boolean;
 }
 
 const DEFAULT_MAX = 12;
@@ -37,14 +43,18 @@ const DEFAULT_MAX = 12;
 export const SessionsPanel: React.FC<Props> = ({
   history, featureType, onSelectItem, onOpenFullHistory,
   maxSessions = DEFAULT_MAX,
+  fullHeight = false,
 }) => {
-  const [mode, setMode] = useState<Mode>('row');
+  // In fullHeight mode we default to grid — the whole workspace is the
+  // panel, so bigger thumbnails read better than compact rows.
+  const [mode, setMode] = useState<Mode>(fullHeight ? 'grid' : 'row');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  const effectiveMax = fullHeight ? maxSessions * 2 : maxSessions;
   const sessions = useMemo(() => {
     const filtered = history.filter(h => (h.featureType || 'banner') === featureType);
-    return bucketIntoSessions(filtered).slice(0, maxSessions);
-  }, [history, featureType, maxSessions]);
+    return bucketIntoSessions(filtered).slice(0, effectiveMax);
+  }, [history, featureType, effectiveMax]);
 
   const toggleExpand = (key: string) => {
     setExpanded(prev => {
@@ -56,15 +66,21 @@ export const SessionsPanel: React.FC<Props> = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="border-t border-line bg-surface/50 backdrop-blur-sm px-6 py-4 flex items-center gap-2 text-xs text-subtle">
-        <HistoryIcon size={13} />
-        <span>Chưa có phiên nào — banner sẽ hiện ở đây sau khi generate.</span>
+      <div className={`border-t border-line bg-surface/50 backdrop-blur-sm ${
+        fullHeight ? 'flex-1 flex flex-col items-center justify-center' : 'px-6 py-4 flex items-center gap-2'
+      } text-xs text-subtle`}>
+        <HistoryIcon size={fullHeight ? 28 : 13} className={fullHeight ? 'text-subtle mb-2 opacity-50' : ''} />
+        <span className={fullHeight ? 'text-sm' : ''}>
+          Chưa có phiên nào — banner sẽ hiện ở đây sau khi generate.
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="border-t border-line bg-surface/60 backdrop-blur-sm flex flex-col overflow-hidden">
+    <div className={`border-t border-line bg-surface/60 backdrop-blur-sm flex flex-col overflow-hidden ${
+      fullHeight ? 'flex-1 min-h-0' : ''
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-line bg-canvas/40">
         <div className="flex items-center gap-2 text-xs">
@@ -88,8 +104,11 @@ export const SessionsPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Sessions list */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 max-h-[42vh] min-h-[120px]">
+      {/* Sessions list — max-height only when embedded as a bottom strip.
+          In fullHeight mode the parent flex controls how much space we get. */}
+      <div className={`flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-[120px] ${
+        fullHeight ? '' : 'max-h-[42vh]'
+      }`}>
         {sessions.map(s => {
           const isExpanded = expanded.has(s.key);
           return mode === 'row' ? (
@@ -99,12 +118,14 @@ export const SessionsPanel: React.FC<Props> = ({
               onSelectItem={onSelectItem}
               expanded={isExpanded}
               onToggleExpand={() => toggleExpand(s.key)}
+              fullHeight={fullHeight}
             />
           ) : (
             <SessionGrid
               key={s.key}
               session={s}
               onSelectItem={onSelectItem}
+              fullHeight={fullHeight}
             />
           );
         })}
@@ -120,11 +141,14 @@ interface SessionRowProps {
   onSelectItem: (item: HistoryItem) => void;
   expanded: boolean;
   onToggleExpand: () => void;
+  fullHeight?: boolean;
 }
 
-const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded, onToggleExpand }) => {
-  const shown = expanded ? session.items : session.items.slice(0, 8);
+const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded, onToggleExpand, fullHeight }) => {
+  const capBig = fullHeight ? 14 : 8;
+  const shown = expanded ? session.items : session.items.slice(0, capBig);
   const overflow = session.items.length - shown.length;
+  const thumbSize = fullHeight ? 72 : 44;
 
   return (
     <div className="rounded-md border border-line bg-canvas hover:border-brand/40 transition-colors">
@@ -140,19 +164,20 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded
         <span className="text-[11px] text-subtle shrink-0 font-mono">
           {session.items.length} banner
         </span>
-        <span className="text-[10px] text-subtle truncate ml-auto pl-3">
-          {sessionSubtitle(session.items[0])}
-        </span>
+        <div className="ml-auto shrink-0 flex items-center gap-1">
+          <ConfigChips item={session.items[0]} />
+        </div>
       </button>
 
       <div className="px-3 pb-2 flex items-center gap-1.5 overflow-x-auto">
         {shown.map(it => (
-          <Thumb key={it.id} item={it} size={44} onClick={() => onSelectItem(it)} />
+          <Thumb key={it.id} item={it} size={thumbSize} onClick={() => onSelectItem(it)} />
         ))}
         {overflow > 0 && (
           <button
             onClick={onToggleExpand}
-            className="shrink-0 w-11 h-11 rounded border border-dashed border-line text-[10px] text-muted hover:text-brand hover:border-brand/40"
+            style={{ width: thumbSize, height: thumbSize }}
+            className="shrink-0 rounded border border-dashed border-line text-[10px] text-muted hover:text-brand hover:border-brand/40"
           >
             +{overflow}
           </button>
@@ -167,18 +192,22 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded
 const SessionGrid: React.FC<{
   session: ReturnType<typeof bucketIntoSessions>[number];
   onSelectItem: (item: HistoryItem) => void;
-}> = ({ session, onSelectItem }) => {
+  fullHeight?: boolean;
+}> = ({ session, onSelectItem, fullHeight }) => {
+  const gridCols = fullHeight
+    ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'
+    : 'grid-cols-4 sm:grid-cols-6 md:grid-cols-8';
   return (
     <div className="rounded-md border border-line bg-canvas p-3 space-y-2">
       <div className="flex items-center gap-2 text-[11px]">
         <Clock size={11} className="text-brand" />
         <span className="text-fg font-medium">{relativeTime(session.startedAt)}</span>
         <span className="text-subtle font-mono">{session.items.length} banner</span>
-        <span className="text-subtle truncate ml-2 flex-1 min-w-0">
-          {sessionSubtitle(session.items[0])}
-        </span>
+        <div className="ml-auto shrink-0 flex items-center gap-1">
+          <ConfigChips item={session.items[0]} />
+        </div>
       </div>
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
+      <div className={`grid ${gridCols} gap-2`}>
         {session.items.map(it => (
           <Thumb key={it.id} item={it} size={0} onClick={() => onSelectItem(it)} />
         ))}
@@ -259,9 +288,41 @@ function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString('vi-VN');
 }
 
-function sessionSubtitle(first: HistoryItem | undefined): string {
-  if (!first) return '';
-  const p = (first.promptUsed || '').trim();
-  const short = p.length > 80 ? p.slice(0, 80) + '…' : p;
-  return short || `${first.model || 'unknown model'}`;
+// Compact config chips shown at the right of each session row/grid header.
+// Replaces the previous raw-prompt subtitle which surfaced noisy strings
+// like `Brand reference (JSON): {"source": "Pasted markdown.md ..."}`.
+const ConfigChips: React.FC<{ item: HistoryItem | undefined }> = ({ item }) => {
+  if (!item) return null;
+  const modelLabel = friendlyModel(item.model);
+  return (
+    <>
+      {modelLabel && (
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand/10 text-brand border border-brand/20">
+          {modelLabel}
+        </span>
+      )}
+      {item.aspectRatio && (
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-raised text-muted border border-line">
+          {item.aspectRatio}
+        </span>
+      )}
+      {item.quality && (
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-raised text-muted border border-line">
+          {item.quality}
+        </span>
+      )}
+    </>
+  );
+};
+
+/** Map raw model ids to human names. Falls back to the raw string. */
+function friendlyModel(raw: string | undefined): string {
+  if (!raw) return '';
+  const s = raw.trim();
+  if (s === 'gpt_image_2')                       return 'GPT Image 2';
+  if (s === 'google_image_gen_banana_pro')       return 'Nano Banana Pro';
+  if (s.startsWith('gemini-'))                   return 'Gemini';
+  // Legacy "UGC · <model>" leaks — display without prefix.
+  if (s.startsWith('UGC ') || s.startsWith('UGC·')) return s.replace(/^UGC\s*·?\s*/, '');
+  return s;
 }

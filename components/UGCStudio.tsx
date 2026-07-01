@@ -693,17 +693,31 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
         </header>
         <main className="flex-1 overflow-hidden relative flex flex-col">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/20 via-gray-950 to-gray-950 pointer-events-none" />
-          <div className={`relative overflow-hidden ${results.length === 0 ? 'flex-1' : 'flex-1 min-h-0'}`}>
-            <ResultViewer results={results} onRegenerate={handleRegenerate} />
-          </div>
-          <div className="relative shrink-0 z-10">
-            <SessionsPanel
-              history={history}
-              featureType="ugc"
-              onSelectItem={(it) => setEditingItem(it)}
-              onOpenFullHistory={() => onNavigate('history')}
-            />
-          </div>
+          {results.length === 0 ? (
+            <div className="relative flex-1 min-h-0 flex flex-col z-10">
+              <SessionsPanel
+                history={history}
+                featureType="ugc"
+                fullHeight
+                onSelectItem={(it) => setEditingItem(it)}
+                onOpenFullHistory={() => onNavigate('history')}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="relative flex-1 min-h-0 overflow-hidden">
+                <ResultViewer results={results} onRegenerate={handleRegenerate} />
+              </div>
+              <div className="relative shrink-0 z-10">
+                <SessionsPanel
+                  history={history}
+                  featureType="ugc"
+                  onSelectItem={(it) => setEditingItem(it)}
+                  onOpenFullHistory={() => onNavigate('history')}
+                />
+              </div>
+            </>
+          )}
         </main>
       </div>
 

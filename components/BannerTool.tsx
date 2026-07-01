@@ -996,22 +996,41 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand/10 via-canvas to-canvas pointer-events-none" />
-          <div className={`relative overflow-hidden ${results.length === 0 ? 'flex-1' : 'flex-1 min-h-0'}`}>
-            <ResultViewer
-              results={results}
-              onRegenerate={handleRegenerate}
-              onToggleVote={toggleVote}
-              isVoted={(id) => votes.some(v => v.id === id)}
-            />
-          </div>
-          <div className="relative shrink-0 z-10">
-            <SessionsPanel
-              history={history}
-              featureType="banner"
-              onSelectItem={(it) => setEditingItem(it)}
-              onOpenFullHistory={() => onNavigate('history')}
-            />
-          </div>
+          {/* Layout flip based on whether we have current results:
+              - No results → SessionsPanel occupies the full workspace so past
+                banners are the primary content (bigger thumbnails, grid mode).
+              - Has results → ResultViewer takes the top, SessionsPanel becomes
+                a compact bottom strip showing recent runs for quick reference. */}
+          {results.length === 0 ? (
+            <div className="relative flex-1 min-h-0 flex flex-col z-10">
+              <SessionsPanel
+                history={history}
+                featureType="banner"
+                fullHeight
+                onSelectItem={(it) => setEditingItem(it)}
+                onOpenFullHistory={() => onNavigate('history')}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="relative flex-1 min-h-0 overflow-hidden">
+                <ResultViewer
+                  results={results}
+                  onRegenerate={handleRegenerate}
+                  onToggleVote={toggleVote}
+                  isVoted={(id) => votes.some(v => v.id === id)}
+                />
+              </div>
+              <div className="relative shrink-0 z-10">
+                <SessionsPanel
+                  history={history}
+                  featureType="banner"
+                  onSelectItem={(it) => setEditingItem(it)}
+                  onOpenFullHistory={() => onNavigate('history')}
+                />
+              </div>
+            </>
+          )}
         </main>
       </div>
 
