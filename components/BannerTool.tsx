@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, Wand2, Settings2, AlertCircle, Cpu, Maximize2, Type, ArrowLeft, Key, Zap, FolderOpen, Trash2, X, Palette, Hash, Plus, Megaphone, ListPlus, Save } from 'lucide-react';
+import { Wand2, AlertCircle, ArrowLeft, Key, Trash2, X, Type } from 'lucide-react';
 import { UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandSnippet, BrandProject, VotedBanner } from '../types';
 import { ImageUploader } from './ImageUploader';
 import { ResultViewer } from './ResultViewer';
@@ -742,7 +742,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         <div className="px-5 py-4 border-b border-line flex items-center gap-3">
           <div className="flex-1">
             <h2 className="text-sm font-semibold text-fg">Controls</h2>
-            <p className="text-[11px] text-subtle">Style ref + Product → AI generate</p>
+            <p className="text-[11px] text-subtle">Brand · References · Content → AI</p>
           </div>
           <button
             onClick={() => setShowApiKeySettings(true)}
@@ -769,60 +769,6 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               >
                 Thêm key
               </button>
-            </div>
-          )}
-
-          {/* Industry picker OLD — hidden, kept for reference */}
-          {false && industries.length > 0 && (
-            <div>
-              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-2">
-                Ngành / Loại banner
-              </h2>
-              <div className="space-y-2">
-                <select
-                  value={selectedIndustry}
-                  onChange={(e) => setSelectedIndustry(e.target.value)}
-                  className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-brand"
-                >
-                  <option value="">— Không dùng template ngành —</option>
-                  {industries.map(c => (
-                    <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>
-                  ))}
-                </select>
-                {selectedIndustry && industryRefs.length === 0 && (
-                  <p className="text-[11px] text-subtle">
-                    Ngành này chưa có ref banner — gen sẽ chỉ dùng refs của bạn.
-                  </p>
-                )}
-                {industryRefs.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[11px] text-muted">
-                        Hệ thống nạp <b>{Math.min(industryRefLimit, industryRefs.length)}</b> / {industryRefs.length} ref + insights
-                      </p>
-                      <select
-                        value={industryRefLimit}
-                        onChange={(e) => setIndustryRefLimit(Number(e.target.value))}
-                        className="text-[10px] bg-canvas border border-line rounded px-1 py-0.5"
-                      >
-                        {[1, 2, 3].map(n => (
-                          <option key={n} value={n}>{n} ref</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {industryRefs.slice(0, industryRefLimit).map(r => (
-                        <div key={r.id} className="aspect-square rounded border border-line overflow-hidden bg-canvas relative" title={r.label || ''}>
-                          <img src={r.imageUrl} className="w-full h-full object-cover" alt="" />
-                          {r.insights && (
-                            <span className="absolute top-0.5 right-0.5 text-[8px] bg-brand text-white px-1 rounded" title="Có insights AI">AI</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -860,40 +806,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             onOpenBriefsModal={() => setShowBriefsModal(true)}
           />
 
-          {/* Configuration wrapper — will be dismantled by later sprints */}
-          <div>
-            {/* Model Selection (only for Gemini) */}
-            {backend === 'gemini' && (
-              <div className="mb-4">
-                <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                  <Cpu size={14} /> Model
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {[
-                    { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro' },
-                    { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2' }
-                  ].map(model => {
-                    const active = selectedModel === model.id;
-                    return (
-                      <button
-                        key={model.id}
-                        onClick={() => setSelectedModel(model.id)}
-                        className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active
-                            ? 'bg-brand border-brand text-white shadow-sm'
-                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                        }`}
-                      >
-                        <div className="text-xs font-medium leading-tight">{model.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>
-                          {model.id}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+          {/* Configuration wrapper — bundles the section-below-references */}
+          <div className="space-y-4">
 
             {/* Output row — Aspect / Quality / Qty inline selects (Sprint H5) */}
             {(() => {
@@ -1026,14 +940,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-warning-fg animate-pulse' : 'bg-success-fg'}`}></span>
               {isGenerating ? 'Generating' : 'Ready'}
             </span>
-            <span className={`px-2 py-0.5 rounded-full border ${
-              backend === 'coachio'
-                ? 'bg-brand-soft border-brand/20 text-brand'
-                : 'bg-canvas border-brand/20 text-brand'
-            }`}>
-              {backend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
+            <span className="px-2 py-0.5 rounded-full border bg-brand/10 border-brand/30 text-brand font-mono">
+              {coachioModel === 'gpt_image_2' ? 'GPT Image 2' : 'Nano Banana Pro'}
             </span>
-            <span>Quality: {imageSize}</span>
+            <span className="font-mono">{imageSize} · {aspectRatio}</span>
           </div>
         </header>
 
