@@ -13,6 +13,9 @@ import { BrandBrief } from '../types';
 import { listSelectedBriefsForBrand } from '../services/brandBriefService';
 import { BrandRow } from './banner/BrandRow';
 import { BriefsModal } from './banner/BriefsModal';
+import { ReferencesRow } from './banner/ReferencesRow';
+import { ReferencePickerModal } from './banner/ReferencePickerModal';
+import { IndustryPickerModal } from './banner/IndustryPickerModal';
 import {
   getGeminiApiKey,
   getActiveBackend,
@@ -142,6 +145,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
   const [showBriefsModal, setShowBriefsModal] = useState(false);
+  const [showStyleModal, setShowStyleModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [showIndustryModal, setShowIndustryModal] = useState(false);
   const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
@@ -761,8 +767,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* Industry picker — auto-loads admin curated ref banners */}
-          {industries.length > 0 && (
+          {/* Industry picker OLD — hidden, kept for reference */}
+          {false && industries.length > 0 && (
             <div>
               <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-2">
                 Ngành / Loại banner
@@ -815,39 +821,25 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* Inputs */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
-              {/* Migrate library button hidden — migration done */}
-              {false && (localRefCount + localProdCount) > 0 && (
-                <button
-                  onClick={migrateLocalLibraries}
-                  className="text-[10px] text-warning hover:text-warning hover:bg-warning-soft px-2 py-1 rounded border border-warning-fg/40"
-                >
-                  Migrate library ({localRefCount + localProdCount})
-                </button>
-              )}
-            </div>
-            <ImageUploader
-              title="Style Reference(s)"
-              images={refImages}
-              onUpload={(f) => handleUpload(f, 'ref')}
-              onRemove={(id) => handleRemove(id, 'ref')}
-              library={refLibrary}
-              onLibrarySelect={(item) => handleLibrarySelect(item, 'ref')}
-              onLibraryDelete={(id) => handleLibraryDelete(id, 'ref')}
-            />
-            <ImageUploader
-              title="Product Image(s)"
-              images={prodImages}
-              onUpload={(f) => handleUpload(f, 'prod')}
-              onRemove={(id) => handleRemove(id, 'prod')}
-              library={prodLibrary}
-              onLibrarySelect={(item) => handleLibrarySelect(item, 'prod')}
-              onLibraryDelete={(id) => handleLibraryDelete(id, 'prod')}
-            />
-          </div>
+          {/* References — 3 compact cards, each opens picker modal */}
+          <ReferencesRow
+            styleImages={refImages}
+            productImages={prodImages}
+            industryLabel={
+              selectedIndustry
+                ? (() => {
+                    const c = industries.find(x => x.id === selectedIndustry);
+                    return c ? `${c.emoji} ${c.label}` : undefined;
+                  })()
+                : undefined
+            }
+            industryRefCount={
+              selectedIndustry ? Math.min(industryRefLimit, industryRefs.length) : undefined
+            }
+            onOpenStyle={() => setShowStyleModal(true)}
+            onOpenProduct={() => setShowProductModal(true)}
+            onOpenIndustry={() => setShowIndustryModal(true)}
+          />
 
           <div className="h-px bg-raised" />
 
@@ -1245,6 +1237,43 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           onChangeEnabled={setEnabledBriefIds}
           onClose={() => setShowBriefsModal(false)}
           onNavigateToBrandStyle={onNavigate}
+        />
+      )}
+
+      {/* Style / Product reference pickers (Sprint H2) */}
+      {showStyleModal && (
+        <ReferencePickerModal
+          kind="style"
+          images={refImages}
+          library={refLibrary}
+          onUpload={(f) => handleUpload(f, 'ref')}
+          onRemove={(id) => handleRemove(id, 'ref')}
+          onLibrarySelect={(item) => handleLibrarySelect(item, 'ref')}
+          onLibraryDelete={(id) => handleLibraryDelete(id, 'ref')}
+          onClose={() => setShowStyleModal(false)}
+        />
+      )}
+      {showProductModal && (
+        <ReferencePickerModal
+          kind="product"
+          images={prodImages}
+          library={prodLibrary}
+          onUpload={(f) => handleUpload(f, 'prod')}
+          onRemove={(id) => handleRemove(id, 'prod')}
+          onLibrarySelect={(item) => handleLibrarySelect(item, 'prod')}
+          onLibraryDelete={(id) => handleLibraryDelete(id, 'prod')}
+          onClose={() => setShowProductModal(false)}
+        />
+      )}
+      {showIndustryModal && (
+        <IndustryPickerModal
+          industries={industries}
+          selectedIndustry={selectedIndustry}
+          onChangeIndustry={setSelectedIndustry}
+          industryRefs={industryRefs}
+          industryRefLimit={industryRefLimit}
+          onChangeLimit={setIndustryRefLimit}
+          onClose={() => setShowIndustryModal(false)}
         />
       )}
 
