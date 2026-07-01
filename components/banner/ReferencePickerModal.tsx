@@ -3,12 +3,14 @@
 // all upload / paste / library logic still lives in ImageUploader.
 
 import React from 'react';
-import { X, Image as ImageIcon, Package } from 'lucide-react';
+import { X, Image as ImageIcon, Package, UserSquare2, Shirt } from 'lucide-react';
 import { UploadedImage, LibraryImage } from '../../types';
 import { ImageUploader } from '../ImageUploader';
 
+export type PickerKind = 'style' | 'product' | 'face' | 'fashion';
+
 interface Props {
-  kind: 'style' | 'product';
+  kind: PickerKind;
   images: UploadedImage[];
   library: LibraryImage[];
   onUpload: (files: FileList) => Promise<void>;
@@ -18,9 +20,11 @@ interface Props {
   onClose: () => void;
 }
 
-const KIND_META = {
-  style:   { title: 'Style Reference(s)',  icon: <ImageIcon size={14} />, hint: 'Ảnh minh hoạ cho composition / palette / typography.' },
-  product: { title: 'Product Image(s)',    icon: <Package size={14} />,   hint: 'Ảnh sản phẩm chính sẽ integrate vào banner.' },
+const KIND_META: Record<PickerKind, { title: string; icon: React.ReactNode; hint: string }> = {
+  style:   { title: 'Style Reference(s)',  icon: <ImageIcon size={14} />,    hint: 'Ảnh minh hoạ cho composition / palette / typography.' },
+  product: { title: 'Product Image(s)',    icon: <Package size={14} />,      hint: 'Ảnh sản phẩm chính sẽ integrate vào banner.' },
+  face:    { title: 'Face Reference(s)',   icon: <UserSquare2 size={14} />,  hint: 'Ảnh khuôn mặt để giữ nhận dạng nhất quán qua các gen.' },
+  fashion: { title: 'Fashion + Style',     icon: <Shirt size={14} />,        hint: 'Ảnh trang phục / phong cách outfit tham chiếu.' },
 };
 
 export const ReferencePickerModal: React.FC<Props> = ({

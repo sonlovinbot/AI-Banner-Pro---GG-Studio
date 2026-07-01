@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import {
-  UserSquare2, Wand2, Settings2, AlertCircle, Cpu, Maximize2, Type, ArrowLeft, Key, Zap,
-  Palette, Hash, X,
+  UserSquare2, Wand2, AlertCircle, ArrowLeft, Key, Type,
 } from 'lucide-react';
 import {
   UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandProject, HistoryItem,
 } from '../types';
-import { ImageUploader } from './ImageUploader';
 import { ResultViewer } from './ResultViewer';
 import { SessionsPanel } from './SessionsPanel';
 import { HistoryEditModal } from './HistoryEditModal';
+import { BrandRow } from './banner/BrandRow';
+import { OutputRow } from './banner/OutputRow';
+import { AdvancedPopover } from './banner/AdvancedPopover';
+import { ReferencePickerModal } from './banner/ReferencePickerModal';
+import { UgcReferencesRow } from './ugc/UgcReferencesRow';
 import { generateUgcWithGemini } from '../services/geminiService';
 import { generateUgcWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
@@ -79,6 +82,11 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     listHistoryFromCloud().then(setHistory).catch(() => {});
   }, []);
   React.useEffect(() => { refreshHistory(); }, [refreshHistory]);
+
+  // Reference picker modals (Face / Fashion / Product live in popups now).
+  const [showFaceModal, setShowFaceModal] = useState(false);
+  const [showFashionModal, setShowFashionModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
 
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey =
@@ -393,7 +401,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-fg tracking-tight">UGC Studio</h1>
-            <p className="text-xs text-info font-mono">Face-consistent</p>
+            <p className="text-xs text-brand font-mono">Face-consistent</p>
           </div>
           <button
             onClick={() => setShowApiKeySettings(true)}
@@ -422,208 +430,50 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* Assets */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider">Assets</h2>
-              {/* Migrate library button hidden — migration done */}
-              {false && (localFaceCount + localFashionCount + localProdCount) > 0 && (
-                <button
-                  onClick={migrateLocalLibraries}
-                  className="text-[10px] text-warning hover:text-warning hover:bg-warning-soft px-2 py-1 rounded border border-warning-fg/40"
-                >
-                  Migrate library ({localFaceCount + localFashionCount + localProdCount})
-                </button>
-              )}
-            </div>
-            <ImageUploader
-              title="Face"
-              images={faceImages}
-              onUpload={(f) => handleUpload(f, 'face')}
-              onRemove={(id) => handleRemove(id, 'face')}
-              library={faceLibrary}
-              onLibrarySelect={(item) => handleLibrarySelect(item, 'face')}
-              onLibraryDelete={(id) => handleLibraryDelete(id, 'face')}
-            />
-            <ImageUploader
-              title="Fashion + Style"
-              images={fashionImages}
-              onUpload={(f) => handleUpload(f, 'fashion')}
-              onRemove={(id) => handleRemove(id, 'fashion')}
-              library={fashionLibrary}
-              onLibrarySelect={(item) => handleLibrarySelect(item, 'fashion')}
-              onLibraryDelete={(id) => handleLibraryDelete(id, 'fashion')}
-            />
-            <ImageUploader
-              title="Product"
-              images={prodImages}
-              onUpload={(f) => handleUpload(f, 'prod')}
-              onRemove={(id) => handleRemove(id, 'prod')}
-              library={prodLibrary}
-              onLibrarySelect={(item) => handleLibrarySelect(item, 'prod')}
-              onLibraryDelete={(id) => handleLibraryDelete(id, 'prod')}
-            />
-          </div>
+          {/* References — 3 compact cards (Face / Fashion / Product) */}
+          <UgcReferencesRow
+            faceImages={faceImages}
+            fashionImages={fashionImages}
+            productImages={prodImages}
+            onOpenFace={() => setShowFaceModal(true)}
+            onOpenFashion={() => setShowFashionModal(true)}
+            onOpenProduct={() => setShowProductModal(true)}
+          />
 
           <div className="h-px bg-raised" />
 
-          {/* Configuration */}
-          <div>
-            <h2 className="text-xs font-semibold text-subtle uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Settings2 size={14} /> Configuration
-            </h2>
+          {/* Brand — compact row (shared with BannerTool) */}
+          <BrandRow
+            projects={brandProjects}
+            activeBrandId={activeBrandId}
+            onApply={applyBrandProject}
+            onClear={() => setActiveBrandId('')}
+            onNavigate={onNavigate}
+          />
 
-            {/* Brand */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                <Palette size={14} /> Brand
-              </label>
-              {brandProjects.length === 0 ? (
-                <button
-                  onClick={() => onNavigate('brand-style')}
-                  className="w-full text-xs py-2 px-3 rounded-md border border-dashed border-line-strong bg-surface text-muted hover:bg-raised hover:border-brand/50 hover:text-brand text-left transition-colors"
-                >
-                  + Tạo Brand Style để dùng nhanh
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={activeBrandId}
-                    onChange={(e) => applyBrandProject(e.target.value)}
-                    className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-brand"
-                  >
-                    <option value="">— Không dùng brand —</option>
-                    {brandProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  {activeBrandId && (
-                    <button onClick={() => setActiveBrandId('')} className="p-2 rounded-md bg-raised hover:bg-raised-2 text-muted hover:text-fg" title="Bỏ chọn">
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Model */}
-            {backend === 'gemini' && (
-              <div className="mb-4">
-                <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {[
-                    { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro' },
-                    { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2' },
-                  ].map(m => {
-                    const active = selectedModel === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => setSelectedModel(m.id)}
-                        className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-brand border-brand text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                        }`}
-                      >
-                        <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>{m.id}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {backend === 'coachio' && (
-              <div className="mb-4">
-                <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Cpu size={14} /> Model</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {[
-                    { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
-                    { id: 'gpt_image_2', name: 'GPT Image 2' },
-                  ].map(m => {
-                    const active = coachioModel === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => setCoachioModel(m.id)}
-                        className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active ? 'bg-brand border-brand text-white' : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                        }`}
-                      >
-                        <div className="text-xs font-medium">{m.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>{m.id}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Variants */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-muted flex items-center gap-1.5"><Hash size={14} /> Số bản tạo</label>
-                <span className="text-[11px] text-fg font-mono bg-raised px-2 py-0.5 rounded">{variantCount}</span>
-              </div>
-              <input
-                type="range" min={1} max={10} step={1} value={variantCount}
-                onChange={(e) => setVariantCount(Number(e.target.value))}
-                className="w-full accent-cyan-500"
-              />
-              <div className="flex justify-between text-[9px] text-subtle mt-0.5 px-0.5">
-                <span>1</span><span>5</span><span>10</span>
-              </div>
-            </div>
-
-            {/* Quality */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Maximize2 size={14} /> Quality</label>
-              <div className="grid grid-cols-3 gap-2">
-                {['1K', '2K', '4K'].map(size => {
-                  const disabled = isResolutionDisabled(size);
-                  const active = imageSize === size;
-                  return (
-                    <button
-                      key={size}
-                      onClick={() => !disabled && setImageSize(size)}
-                      disabled={disabled}
-                      className={`text-xs py-2 rounded-md border transition-all ${
-                        disabled
-                          ? 'bg-surface border-line text-subtle cursor-not-allowed opacity-50'
-                          : active
-                            ? `${accent.bg} ${accent.border} text-white`
-                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                      }`}
-                    >
-                      {size}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Aspect */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 block">Aspect Ratio</label>
-              <div className="grid grid-cols-3 gap-2">
-                {currentAspectRatios.map(r => {
-                  const active = aspectRatio === r;
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => setAspectRatio(r)}
-                      className={`text-xs py-2 rounded-md border transition-all ${
-                        active ? `${accent.bg} ${accent.border} text-white` : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {/* Configuration wrapper */}
+          <div className="space-y-4">
+            {/* Output row — Aspect / Quality / Số bản */}
+            <OutputRow
+              aspectRatio={aspectRatio}
+              aspectRatios={currentAspectRatios}
+              onChangeAspect={setAspectRatio}
+              quality={imageSize}
+              qualities={['1K', '2K', '4K']}
+              isQualityDisabled={isResolutionDisabled}
+              onChangeQuality={setImageSize}
+              qtyLabel="Số bản"
+              qty={variantCount}
+              qtyMax={10}
+              onChangeQty={setVariantCount}
+              totalPreview={variantCount}
+            />
 
             {/* Brand content */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5"><Type size={14} /> Brand Content</label>
+            <div>
+              <label className="text-xs font-semibold text-subtle uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Type size={12} /> Brand Content
+              </label>
               <textarea
                 value={brandContent}
                 onChange={(e) => setBrandContent(e.target.value)}
@@ -632,15 +482,31 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
               />
             </div>
 
-            <div className="mb-2">
-              <label className="text-sm text-muted mb-1 block">Prompt Adjustments</label>
+            {/* Prompt Adjustments */}
+            <div>
+              <label className="text-[10px] text-subtle uppercase tracking-wider block mb-1">
+                Điều chỉnh prompt
+              </label>
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 placeholder="VD: ngồi quán cafe, ánh sáng tự nhiên, đang cầm sản phẩm…"
-                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-20 resize-none"
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-16 resize-none"
               />
             </div>
+
+            {/* Advanced — Model picker collapsed */}
+            <AdvancedPopover
+              coachioModel={coachioModel}
+              coachioModels={[
+                { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
+                { id: 'gpt_image_2', name: 'GPT Image 2' },
+              ]}
+              onChangeCoachioModel={setCoachioModel}
+              bannerType=""
+              bannerTypeOptions={[]}
+              onChangeBannerType={() => {}}
+            />
           </div>
 
           {errorMsg && (
@@ -655,18 +521,16 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
           <button
             onClick={handleGenerate}
             disabled={isGenerating}
-            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all ${
+            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all transform ${
               isGenerating
                 ? 'bg-raised-2 cursor-not-allowed opacity-50 text-fg'
-                : backend === 'coachio'
-                  ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500'
-                  : 'bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500'
+                : 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 hover:scale-[1.02] active:scale-95'
             }`}
           >
             {isGenerating ? (
               <><Wand2 className="animate-spin" size={20} /> Generating {variantCount} variant{variantCount !== 1 ? 's' : ''}…</>
             ) : (
-              <><Wand2 size={20} /> Generate UGC</>
+              <><Wand2 size={20} /> Generate via {coachioModel === 'gpt_image_2' ? 'GPT Image 2' : 'Nano Banana Pro'}</>
             )}
           </button>
         </div>
@@ -681,18 +545,18 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
               <span className={`w-2 h-2 rounded-full ${isGenerating ? 'bg-warning-fg animate-pulse' : 'bg-success-fg'}`} />
               {isGenerating ? 'Generating' : 'Ready'}
             </span>
-            <span className={`px-2 py-0.5 rounded-full border ${
-              backend === 'coachio'
-                ? 'bg-brand-soft border-brand/20 text-brand'
-                : 'bg-info-soft border-brand/20 text-info'
-            }`}>
-              {backend === 'coachio' ? 'Coachio AI' : 'Gemini Direct'}
+            <span className="px-2 py-0.5 rounded-full border bg-brand/10 border-brand/30 text-brand font-mono">
+              {coachioModel === 'gpt_image_2' ? 'GPT Image 2' : 'Nano Banana Pro'}
             </span>
-            <span>Quality: {imageSize}</span>
+            <span className="font-mono">{imageSize} · {aspectRatio}</span>
           </div>
         </header>
         <main className="flex-1 overflow-hidden relative flex flex-col">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/20 via-gray-950 to-gray-950 pointer-events-none" />
+          {/* Theme-aware background so the workspace looks right in both light
+              and dark modes. Was hardcoded from-cyan-900/20 via-gray-950 which
+              only worked on dark. Now uses brand tint over canvas — same as
+              BannerTool. */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand/10 via-canvas to-canvas pointer-events-none" />
           {results.length === 0 ? (
             <div className="relative flex-1 min-h-0 flex flex-col z-10">
               <SessionsPanel
@@ -722,6 +586,45 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
       </div>
 
       {showApiKeySettings && <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />}
+
+      {/* Reference pickers — mirrors BannerTool's modal-based ref UX */}
+      {showFaceModal && (
+        <ReferencePickerModal
+          kind="face"
+          images={faceImages}
+          library={faceLibrary}
+          onUpload={(f) => handleUpload(f, 'face')}
+          onRemove={(id) => handleRemove(id, 'face')}
+          onLibrarySelect={(item) => handleLibrarySelect(item, 'face')}
+          onLibraryDelete={(id) => handleLibraryDelete(id, 'face')}
+          onClose={() => setShowFaceModal(false)}
+        />
+      )}
+      {showFashionModal && (
+        <ReferencePickerModal
+          kind="fashion"
+          images={fashionImages}
+          library={fashionLibrary}
+          onUpload={(f) => handleUpload(f, 'fashion')}
+          onRemove={(id) => handleRemove(id, 'fashion')}
+          onLibrarySelect={(item) => handleLibrarySelect(item, 'fashion')}
+          onLibraryDelete={(id) => handleLibraryDelete(id, 'fashion')}
+          onClose={() => setShowFashionModal(false)}
+        />
+      )}
+      {showProductModal && (
+        <ReferencePickerModal
+          kind="product"
+          images={prodImages}
+          library={prodLibrary}
+          onUpload={(f) => handleUpload(f, 'prod')}
+          onRemove={(id) => handleRemove(id, 'prod')}
+          onLibrarySelect={(item) => handleLibrarySelect(item, 'prod')}
+          onLibraryDelete={(id) => handleLibraryDelete(id, 'prod')}
+          onClose={() => setShowProductModal(false)}
+        />
+      )}
+
       {editingItem && (
         <HistoryEditModal
           item={editingItem}

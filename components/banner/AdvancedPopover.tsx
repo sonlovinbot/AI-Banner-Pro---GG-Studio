@@ -49,7 +49,11 @@ export const AdvancedPopover: React.FC<Props> = ({
           Advanced
         </span>
         <span className="flex items-center gap-2 text-[11px] text-muted">
-          {!open && activeModel && <span className="font-mono">{activeType} · {activeModel}</span>}
+          {!open && activeModel && (
+            <span className="font-mono">
+              {activeType ? `${activeType} · ${activeModel}` : activeModel}
+            </span>
+          )}
           <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
         </span>
       </button>
@@ -72,21 +76,23 @@ export const AdvancedPopover: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Banner Type */}
-          <div>
-            <label className="text-[10px] text-subtle uppercase tracking-wider block mb-1 flex items-center gap-1">
-              <Megaphone size={11} /> Loại banner
-            </label>
-            <select
-              value={bannerType}
-              onChange={(e) => onChangeBannerType(e.target.value)}
-              className="w-full bg-canvas border border-line rounded-md px-2.5 py-2 text-sm text-fg focus:outline-none focus:border-brand"
-            >
-              {bannerTypeOptions.map(o => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
-          </div>
+          {/* Banner Type — only when the caller passes options (banner tool) */}
+          {bannerTypeOptions.length > 0 && (
+            <div>
+              <label className="text-[10px] text-subtle uppercase tracking-wider block mb-1 flex items-center gap-1">
+                <Megaphone size={11} /> Loại banner
+              </label>
+              <select
+                value={bannerType}
+                onChange={(e) => onChangeBannerType(e.target.value)}
+                className="w-full bg-canvas border border-line rounded-md px-2.5 py-2 text-sm text-fg focus:outline-none focus:border-brand"
+              >
+                {bannerTypeOptions.map(o => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
     </section>
