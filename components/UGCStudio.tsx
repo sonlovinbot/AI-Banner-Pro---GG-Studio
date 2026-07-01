@@ -4,17 +4,19 @@ import {
   Palette, Hash, X,
 } from 'lucide-react';
 import {
-  UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandProject,
+  UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandProject, HistoryItem,
 } from '../types';
 import { ImageUploader } from './ImageUploader';
 import { ResultViewer } from './ResultViewer';
+import { SessionsPanel } from './SessionsPanel';
+import { HistoryEditModal } from './HistoryEditModal';
 import { generateUgcWithGemini } from '../services/geminiService';
 import { generateUgcWithCoachio, getCoachioApiKey } from '../services/coachioService';
 import {
   getGeminiApiKey, getActiveBackend, setActiveBackend,
   getLibrary,
 } from '../services/storageService';
-import { addHistoryToCloud } from '../services/historyService';
+import { addHistoryToCloud, listHistoryFromCloud } from '../services/historyService';
 import { listBrandProjectsFromCloud } from '../services/brandProjectService';
 import {
   listLibraryFromCloud,
@@ -69,6 +71,14 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
   const [brandProjects, setBrandProjects] = useState<BrandProject[]>([]);
   React.useEffect(() => { listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {}); }, []);
   const [activeBrandId, setActiveBrandId] = useState<string>('');
+
+  // History + Sessions panel state (mirrors BannerTool).
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [editingItem, setEditingItem] = useState<HistoryItem | null>(null);
+  const refreshHistory = React.useCallback(() => {
+    listHistoryFromCloud().then(setHistory).catch(() => {});
+  }, []);
+  React.useEffect(() => { refreshHistory(); }, [refreshHistory]);
 
   const hasCoachioKey = !!getCoachioApiKey();
   const hasGoogleKey =
@@ -210,6 +220,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     fashion: UploadedImage,
     product: UploadedImage,
     combinedPrompt: string,
+    sessionId?: string,
   ) => {
     const startTime = Date.now();
     let imageUrl: string;
@@ -234,9 +245,12 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
         promptUsed: combinedPrompt,
         timestamp: Date.now(),
         duration,
-        model: `UGC · ${backend === 'coachio' ? coachioModel : selectedModel}`,
+        // featureType is the discriminator now; don't prefix the model name.
+        model: backend === 'coachio' ? coachioModel : selectedModel,
         quality: imageSize,
         aspectRatio,
+        featureType: 'ugc',
+        sessionId,
       });
       persistedUrl = saved.imageUrl;
     } catch (e) {
@@ -279,6 +293,10 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
       'Editorial-style framing, cinematic colors.',
     ];
 
+    // Share a sessionId across every generation in this batch so the
+    // Sessions panel groups them correctly.
+    const sessionId = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
     const promises = placeholders.map(async (placeholder) => {
       try {
         const face = getRandomItem<UploadedImage>(faceImages);
@@ -287,7 +305,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
         const nuance = getRandomItem<string>(varietyPrompts);
         const combinedPrompt = `${userPrompt}. ${nuance}`.trim();
 
-        const { imageUrl, duration } = await generateSingle(placeholder, face, fashion, product, combinedPrompt);
+        const { imageUrl, duration } = await generateSingle(placeholder, face, fashion, product, combinedPrompt, sessionId);
         setResults(prev => prev.map(p =>
           p.id === placeholder.id
             ? { ...p, imageUrl, status: 'success', promptUsed: combinedPrompt, duration, refImage: fashion, prodImage: product }
@@ -309,6 +327,7 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     await Promise.all(promises);
     setIsGenerating(false);
     setGenerationProgress({});
+    refreshHistory();
   };
 
   const handleRegenerate = async (id: string, adjustmentPrompt: string) => {
@@ -672,13 +691,30 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
             <span>Quality: {imageSize}</span>
           </div>
         </header>
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-hidden relative flex flex-col">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/20 via-gray-950 to-gray-950 pointer-events-none" />
-          <ResultViewer results={results} onRegenerate={handleRegenerate} />
+          <div className={`relative overflow-hidden ${results.length === 0 ? 'flex-1' : 'flex-1 min-h-0'}`}>
+            <ResultViewer results={results} onRegenerate={handleRegenerate} />
+          </div>
+          <div className="relative shrink-0 z-10">
+            <SessionsPanel
+              history={history}
+              featureType="ugc"
+              onSelectItem={(it) => setEditingItem(it)}
+              onOpenFullHistory={() => onNavigate('history')}
+            />
+          </div>
         </main>
       </div>
 
       {showApiKeySettings && <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />}
+      {editingItem && (
+        <HistoryEditModal
+          item={editingItem}
+          onClose={() => setEditingItem(null)}
+          onUpdated={() => refreshHistory()}
+        />
+      )}
     </div>
   );
 };

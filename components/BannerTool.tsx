@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Wand2, AlertCircle, ArrowLeft, Key, Trash2, X, Type } from 'lucide-react';
-import { UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandSnippet, BrandProject, VotedBanner } from '../types';
+import { UploadedImage, GeneratedBanner, AppPage, LibraryCategory, LibraryImage, BrandSnippet, BrandProject, VotedBanner, HistoryItem } from '../types';
+import { SessionsPanel } from './SessionsPanel';
+import { HistoryEditModal } from './HistoryEditModal';
 import { ImageUploader } from './ImageUploader';
 import { ResultViewer } from './ResultViewer';
 import { generateBannerWithGemini } from '../services/geminiService';
@@ -25,7 +27,7 @@ import {
   setActiveBackend,
   getLibrary,
 } from '../services/storageService';
-import { addHistoryToCloud } from '../services/historyService';
+import { addHistoryToCloud, listHistoryFromCloud } from '../services/historyService';
 import {
   listVotesFromCloud,
   addVoteToCloud,
@@ -219,12 +221,20 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [activeBrandId, setActiveBrandId] = useState<string>('');
   const [votes, setVotes] = useState<VotedBanner[]>([]);
 
+  // History for the workspace bottom Sessions panel.
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [editingItem, setEditingItem] = useState<HistoryItem | null>(null);
+  const refreshHistory = React.useCallback(() => {
+    listHistoryFromCloud().then(setHistory).catch(() => {});
+  }, []);
+
   // Initial cloud loads
   React.useEffect(() => {
     listVotesFromCloud().then(setVotes).catch(() => {});
     listSnippetsFromCloud().then(setBrandLibrary).catch(() => {});
     listBrandProjectsFromCloud().then(setBrandProjects).catch(() => {});
-  }, []);
+    refreshHistory();
+  }, [refreshHistory]);
 
   // Auto-load brand's selected briefs when a brand is applied. Default all
   // enabled — user can untick per-brief if they don't want it in this run.
@@ -483,6 +493,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     combinedPrompt: string,
     contentForThis?: string,
     extraReferences: UploadedImage[] = [],
+    sessionId?: string,
   ) => {
     const startTime = Date.now();
     let imageUrl: string;
@@ -532,6 +543,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         model: backend === 'coachio' ? coachioModel : selectedModel,
         quality: imageSize,
         aspectRatio,
+        featureType: 'banner',
+        sessionId,
       });
       persistedImageUrl = saved.imageUrl; // Bunny CDN URL if Gemini base64 was uploaded
     } catch (e: any) {
@@ -628,6 +641,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setResults(plan.map(p => p.placeholder));
 
     const typePrompt = getBannerTypePrompt(bannerType);
+    // One session = one Generate click. Every banner in this batch shares
+    // the sessionId so the Sessions panel groups them together even if the
+    // per-banner timestamps drift due to async completion order.
+    const sessionId = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
     const promises = plan.map(async ({ placeholder, content }) => {
       // Either pool can be empty; fall back to the other so user can run
@@ -649,7 +666,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
       try {
         const { imageUrl, duration } = await generateSingle(
-          placeholder, selectedRef, selectedProd, combinedPrompt, content
+          placeholder, selectedRef, selectedProd, combinedPrompt, content,
+          [], sessionId,
         );
 
         setResults(prev => prev.map(p =>
@@ -682,6 +700,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     await Promise.all(promises);
     setIsGenerating(false);
     setGenerationProgress({});
+    // Pull the fresh batch into the Sessions panel.
+    refreshHistory();
   };
 
   const handleRegenerate = async (id: string, adjustmentPrompt: string, extras: UploadedImage[] = []) => {
@@ -974,16 +994,35 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-hidden relative flex flex-col">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-brand/10 via-canvas to-canvas pointer-events-none" />
-          <ResultViewer
-            results={results}
-            onRegenerate={handleRegenerate}
-            onToggleVote={toggleVote}
-            isVoted={(id) => votes.some(v => v.id === id)}
-          />
+          <div className={`relative overflow-hidden ${results.length === 0 ? 'flex-1' : 'flex-1 min-h-0'}`}>
+            <ResultViewer
+              results={results}
+              onRegenerate={handleRegenerate}
+              onToggleVote={toggleVote}
+              isVoted={(id) => votes.some(v => v.id === id)}
+            />
+          </div>
+          <div className="relative shrink-0 z-10">
+            <SessionsPanel
+              history={history}
+              featureType="banner"
+              onSelectItem={(it) => setEditingItem(it)}
+              onOpenFullHistory={() => onNavigate('history')}
+            />
+          </div>
         </main>
       </div>
+
+      {/* History edit modal — shared with the HistoryPage flow */}
+      {editingItem && (
+        <HistoryEditModal
+          item={editingItem}
+          onClose={() => setEditingItem(null)}
+          onUpdated={() => { refreshHistory(); }}
+        />
+      )}
 
       {/* API Key Settings Modal */}
       {showApiKeySettings && (

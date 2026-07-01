@@ -1,4 +1,4 @@
-import { HistoryItem } from '../types';
+import { HistoryItem, FeatureType } from '../types';
 import { getSupabase } from './supabaseClient';
 import { uploadDataUrlToBunny } from './bunnyService';
 
@@ -14,6 +14,8 @@ function rowToItem(row: any): HistoryItem {
     aspectRatio: row.aspect_ratio || '1:1',
     parentId: row.parent_id || undefined,
     version: row.version ?? 1,
+    featureType: (row.feature_type as FeatureType) || 'banner',
+    sessionId: row.session_id || undefined,
   };
 }
 
@@ -29,6 +31,8 @@ function itemToRow(item: HistoryItem, userId: string) {
     aspect_ratio: item.aspectRatio || null,
     parent_id: item.parentId || null,
     version: item.version ?? 1,
+    feature_type: item.featureType || 'banner',
+    session_id: item.sessionId || null,
     created_at: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
   };
 }
@@ -80,6 +84,53 @@ export async function clearHistoryInCloud(): Promise<void> {
   const userId = await requireUserId();
   const { error } = await getSupabase().from('banner_history').delete().eq('user_id', userId);
   if (error) throw error;
+}
+
+// ─────────── Session grouping ───────────
+
+/** A group of history items generated in one Generate click (same
+ *  sessionId, or bucketed by close timestamps if sessionId is missing). */
+export interface HistorySession {
+  key: string;              // sessionId if available, else "ts-<bucketStart>"
+  startedAt: number;        // earliest timestamp in the group
+  items: HistoryItem[];     // chronological, oldest first within the session
+  featureType: FeatureType; // majority feature type in the group
+}
+
+/** Client-side bucketing. Rules:
+ *   - Same non-empty sessionId → same group.
+ *   - Otherwise: items within GAP_MS of each other (same featureType) merge.
+ *  Input is expected in descending time order (as returned by listHistoryFromCloud).
+ *  Output is descending time order of sessions (newest first). */
+const SESSION_GAP_MS = 2 * 60 * 1000; // 2 minutes
+
+export function bucketIntoSessions(items: HistoryItem[]): HistorySession[] {
+  if (items.length === 0) return [];
+  // Work with a shallow copy sorted ascending so bucketing is intuitive.
+  const asc = [...items].sort((a, b) => a.timestamp - b.timestamp);
+  const sessions: HistorySession[] = [];
+  let current: HistorySession | null = null;
+
+  for (const it of asc) {
+    const feat = it.featureType || 'banner';
+    if (!current) {
+      current = { key: it.sessionId || `ts-${it.timestamp}`, startedAt: it.timestamp, items: [it], featureType: feat };
+      continue;
+    }
+    const sameSessionId = it.sessionId && current.items[0]?.sessionId === it.sessionId;
+    const sameFeature   = feat === current.featureType;
+    const withinGap     = it.timestamp - current.items[current.items.length - 1].timestamp <= SESSION_GAP_MS;
+    if (sameSessionId || (sameFeature && withinGap)) {
+      current.items.push(it);
+    } else {
+      sessions.push(current);
+      current = { key: it.sessionId || `ts-${it.timestamp}`, startedAt: it.timestamp, items: [it], featureType: feat };
+    }
+  }
+  if (current) sessions.push(current);
+
+  // Return newest first.
+  return sessions.sort((a, b) => b.startedAt - a.startedAt);
 }
 
 export async function bulkAddHistoryToCloud(items: HistoryItem[]): Promise<{ inserted: number; skipped: number }> {

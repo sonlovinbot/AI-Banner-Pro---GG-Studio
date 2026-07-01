@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Download, Maximize2, X, Trash2, Clock, AlertTriangle, Upload, FileJson, Database, Wand2, Cloud, Loader2, Sparkles } from 'lucide-react';
-import { HistoryItem, AppPage } from '../types';
+import { HistoryItem, AppPage, FeatureType } from '../types';
 import { HistoryEditModal } from './HistoryEditModal';
 import { proxiedBannerUrl } from '../services/cdnProxy';
 import { setStudioHandoff } from '../services/studioHandoffService';
@@ -23,6 +23,7 @@ interface HistoryPageProps {
 
 export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<HistoryItem[]>([]);
+  const [featureFilter, setFeatureFilter] = useState<'all' | FeatureType>('all');
   const [selectedImage, setSelectedImage] = useState<HistoryItem | null>(null);
   const [editTarget, setEditTarget] = useState<HistoryItem | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -229,6 +230,28 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
         </div>
       </header>
 
+      {/* Feature tabs */}
+      <div className="max-w-7xl mx-auto w-full px-6 pt-4 flex items-center gap-2">
+        <FeatureTab
+          active={featureFilter === 'all'}
+          onClick={() => setFeatureFilter('all')}
+          label="Tất cả"
+          count={items.length}
+        />
+        <FeatureTab
+          active={featureFilter === 'banner'}
+          onClick={() => setFeatureFilter('banner')}
+          label="Banner"
+          count={items.filter(i => (i.featureType || 'banner') === 'banner').length}
+        />
+        <FeatureTab
+          active={featureFilter === 'ugc'}
+          onClick={() => setFeatureFilter('ugc')}
+          label="UGC"
+          count={items.filter(i => i.featureType === 'ugc').length}
+        />
+      </div>
+
       {/* Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
         {items.length === 0 ? (
@@ -260,9 +283,28 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               )}
             </div>
           </div>
-        ) : (
+        ) : (() => {
+          const visibleItems = featureFilter === 'all'
+            ? items
+            : items.filter(i => (i.featureType || 'banner') === featureFilter);
+          if (visibleItems.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center h-[40vh] text-subtle">
+                <p className="text-sm">
+                  Chưa có banner nào ở tab <b>{featureFilter === 'banner' ? 'Banner' : 'UGC'}</b>.
+                </p>
+                <button
+                  onClick={() => setFeatureFilter('all')}
+                  className="mt-3 text-xs text-brand hover:underline"
+                >
+                  Xem tất cả
+                </button>
+              </div>
+            );
+          }
+          return (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {items.map(item => (
+            {visibleItems.map(item => (
               <div
                 key={item.id}
                 className="bg-surface border border-line rounded-xl overflow-hidden group hover:border-line-strong transition-colors"
@@ -357,7 +399,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onNavigate }) => {
               </div>
             ))}
           </div>
-        )}
+          );
+        })()}
       </main>
 
       {/* Lightbox (view only) */}
@@ -518,3 +561,26 @@ const ThumbAction: React.FC<ThumbActionProps> = ({
     </button>
   );
 };
+
+const FeatureTab: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}> = ({ active, onClick, label, count }) => (
+  <button
+    onClick={onClick}
+    className={`text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+      active
+        ? 'bg-brand/15 border-brand/40 text-brand font-semibold'
+        : 'bg-canvas border-line text-muted hover:border-brand/30 hover:text-fg'
+    }`}
+  >
+    {label}
+    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+      active ? 'bg-brand/20 text-brand' : 'bg-raised text-subtle'
+    }`}>
+      {count}
+    </span>
+  </button>
+);

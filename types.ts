@@ -25,6 +25,10 @@ export interface GenerationConfig {
   quality: "1K" | "2K" | "4K";
 }
 
+/** Which tool generated the item — drives history tabs + workspace panel
+ *  filtering. Extend when we add more tools. */
+export type FeatureType = 'banner' | 'ugc';
+
 export interface HistoryItem {
   id: string;
   imageUrl: string;
@@ -38,6 +42,12 @@ export interface HistoryItem {
   parentId?: string;
   /** 1 for root, 2+ for each successive edit. */
   version?: number;
+  /** Tool that produced this item. Defaults to 'banner' if missing (backfilled
+   *  server-side by the sprint-history-tabs migration). */
+  featureType?: FeatureType;
+  /** All items generated within the same Generate click share a sessionId.
+   *  Client-side bucketing by timestamp is used when this is empty. */
+  sessionId?: string;
 }
 
 export type AppPage = 'menu' | 'banner' | 'history' | 'brand-style' | 'ugc-studio' | 'ads-manager';
