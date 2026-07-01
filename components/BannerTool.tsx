@@ -16,6 +16,8 @@ import { BriefsModal } from './banner/BriefsModal';
 import { ReferencesRow } from './banner/ReferencesRow';
 import { ReferencePickerModal } from './banner/ReferencePickerModal';
 import { IndustryPickerModal } from './banner/IndustryPickerModal';
+import { ContentSection } from './banner/ContentSection';
+import { MultiContentModal } from './banner/MultiContentModal';
 import {
   getGeminiApiKey,
   getActiveBackend,
@@ -148,6 +150,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
+  const [showMultiContentModal, setShowMultiContentModal] = useState(false);
   const [versionsPerContent, setVersionsPerContent] = useState<number>(2);
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3-pro-image-preview");
@@ -1024,111 +1027,39 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               </div>
             </div>
 
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-muted flex items-center gap-1.5">
-                  <Type size={14} /> Brand Content
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleBrandSave}
-                    disabled={!brandContent.trim()}
-                    className="text-[11px] px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    title="Lưu nội dung này vào thư viện"
-                  >
-                    Lưu
-                  </button>
-                  <button
-                    onClick={() => setShowBrandLibrary(true)}
-                    className="text-[11px] flex items-center gap-1 px-2 py-1 rounded-md bg-raised hover:bg-raised-2 text-fg border border-line-strong transition-colors"
-                    title="Mở thư viện brand content"
-                  >
-                    <FolderOpen size={11} /> Thư viện
-                    {brandLibrary.length > 0 && (
-                      <span className="bg-brand text-white rounded-full px-1.5 py-px text-[9px] font-mono font-semibold min-w-[16px] text-center">
-                        {brandLibrary.length}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </div>
-              {!multiContent && (
-                <textarea
-                  value={brandContent}
-                  onChange={(e) => setBrandContent(e.target.value)}
-                  placeholder="e.g. 'Summer Sale 50% Off', Brand Name..."
-                  className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand transition-colors h-20 resize-none"
-                />
-              )}
+            {/* Content — compact primary + variants chip → MultiContentModal (Sprint H3) */}
+            <ContentSection
+              primaryContent={multiContent ? (contents[0] || '') : brandContent}
+              onChangePrimary={(v) => {
+                if (multiContent) {
+                  setContents(prev => {
+                    const next = [...prev];
+                    next[0] = v;
+                    return next;
+                  });
+                } else {
+                  setBrandContent(v);
+                }
+              }}
+              multiOn={multiContent}
+              onToggleMulti={(on) => {
+                setMultiContent(on);
+                if (on && contents.every(c => !c.trim()) && brandContent.trim()) {
+                  setContents([brandContent.trim()]);
+                }
+              }}
+              variantCount={
+                multiContent
+                  ? Math.max(0, contents.filter(c => c.trim()).length - 1) + enabledBriefIds.size
+                  : 0
+              }
+              onOpenManage={() => setShowMultiContentModal(true)}
+              onSavePrimarySnippet={() => handleBrandSave()}
+              onOpenLibrary={() => setShowBrandLibrary(true)}
+              librarySize={brandLibrary.length}
+            />
 
-              {multiContent && (
-                <div className="space-y-2">
-                  {contents.map((c, idx) => (
-                    <div key={idx} className="relative">
-                      <textarea
-                        value={c}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setContents(prev => prev.map((x, i) => (i === idx ? v : x)));
-                        }}
-                        placeholder={`Content #${idx + 1} — e.g. 'Hè rực rỡ, Sale 50%'`}
-                        className="w-full bg-canvas border border-line rounded-md p-3 pr-9 text-sm text-fg focus:outline-none focus:border-brand transition-colors h-16 resize-none"
-                      />
-                      <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <span className="text-[10px] text-subtle font-mono bg-surface px-1.5 py-0.5 rounded">#{idx + 1}</span>
-                        <button
-                          onClick={() => saveContentSnippet(c)}
-                          disabled={!c.trim()}
-                          className="text-subtle hover:text-success disabled:opacity-30 disabled:hover:text-subtle transition-colors"
-                          title="Lưu content này vào thư viện"
-                        >
-                          <Save size={14} />
-                        </button>
-                        {contents.length > 1 && (
-                          <button
-                            onClick={() => setContents(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-subtle hover:text-danger transition-colors"
-                            title="Xoá content"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setContents(prev => prev.length < MAX_CONTENTS ? [...prev, ""] : prev)}
-                    disabled={contents.length >= MAX_CONTENTS}
-                    className="w-full text-xs py-2 rounded-md border border-dashed border-line-strong text-muted hover:border-brand/50 hover:text-brand hover:bg-canvas transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Plus size={14} /> Create new content
-                    <span className="text-[10px] text-subtle font-mono">{contents.length}/{MAX_CONTENTS}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Multi-content toggle */}
-              <label className="mt-2 flex items-start gap-2 cursor-pointer select-none group">
-                <input
-                  type="checkbox"
-                  checked={multiContent}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setMultiContent(on);
-                    if (on && contents.every(c => !c.trim()) && brandContent.trim()) {
-                      setContents([brandContent.trim()]);
-                    }
-                  }}
-                  className="mt-0.5 accent-indigo-500"
-                />
-                <span className="text-[11px] text-muted leading-snug">
-                  <span className="text-fg font-medium flex items-center gap-1">
-                    <ListPlus size={12} /> Multi-content mode
-                  </span>
-                  Tạo tối đa {MAX_CONTENTS} nội dung khác nhau. Mỗi nội dung sẽ sinh {versionsPerContent} phiên bản.
-                </span>
-              </label>
-            </div>
+            <div className="mb-4" />
 
             {/* Banner Type */}
             <div className="mb-4">
@@ -1274,6 +1205,22 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           industryRefLimit={industryRefLimit}
           onChangeLimit={setIndustryRefLimit}
           onClose={() => setShowIndustryModal(false)}
+        />
+      )}
+      {showMultiContentModal && (
+        <MultiContentModal
+          contents={contents}
+          onChangeContents={setContents}
+          enabledBriefs={brandBriefs.filter(b => enabledBriefIds.has(b.id))}
+          onUnlinkBrief={(id) => {
+            const next = new Set(enabledBriefIds);
+            next.delete(id);
+            setEnabledBriefIds(next);
+          }}
+          onSaveSnippet={(c) => saveContentSnippet(c)}
+          onOpenLibrary={() => { setShowMultiContentModal(false); setShowBrandLibrary(true); }}
+          maxContents={MAX_CONTENTS}
+          onClose={() => setShowMultiContentModal(false)}
         />
       )}
 
