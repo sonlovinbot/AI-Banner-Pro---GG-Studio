@@ -18,6 +18,8 @@ import { ReferencePickerModal } from './banner/ReferencePickerModal';
 import { IndustryPickerModal } from './banner/IndustryPickerModal';
 import { ContentSection } from './banner/ContentSection';
 import { MultiContentModal } from './banner/MultiContentModal';
+import { OutputRow } from './banner/OutputRow';
+import { AdvancedPopover } from './banner/AdvancedPopover';
 import {
   getGeminiApiKey,
   getActiveBackend,
@@ -893,139 +895,33 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               </div>
             )}
 
-            {/* Coachio model selection */}
-            {backend === 'coachio' && (
-              <div className="mb-4">
-                <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                  <Cpu size={14} /> Model
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {[
-                    { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
-                    { id: 'gpt_image_2', name: 'GPT Image 2' },
-                  ].map(model => {
-                    const active = coachioModel === model.id;
-                    return (
-                      <button
-                        key={model.id}
-                        onClick={() => setCoachioModel(model.id)}
-                        className={`py-2 px-3 rounded-md border text-left transition-all ${
-                          active
-                            ? 'bg-brand border-brand text-white shadow-sm'
-                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                        }`}
-                      >
-                        <div className="text-xs font-medium leading-tight">{model.name}</div>
-                        <div className={`text-[10px] mt-0.5 font-mono ${active ? 'text-white/80' : 'text-subtle'}`}>
-                          {model.id}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Variants Count — meaning changes in multi-content mode */}
+            {/* Output row — Aspect / Quality / Qty inline selects (Sprint H5) */}
             {(() => {
               const nonEmptyContents = multiContent ? contents.filter(c => c.trim()).length : 0;
               const enabledBriefCount = enabledBriefIds.size;
               const effectiveContents = Math.max(1, nonEmptyContents + enabledBriefCount);
-              const totalInMulti = effectiveContents * versionsPerContent;
+              const versions = multiContent ? versionsPerContent : variantCount;
+              const total = multiContent ? effectiveContents * versions : versions;
               return (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-sm text-muted flex items-center gap-1.5">
-                      <Hash size={14} />
-                      {multiContent ? 'Phiên bản / content' : 'Số bản tạo'}
-                    </label>
-                    <span className="text-[11px] text-fg font-mono bg-raised px-2 py-0.5 rounded">
-                      {multiContent ? versionsPerContent : variantCount}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={multiContent ? MAX_VERSIONS_PER_CONTENT : 10}
-                    step={1}
-                    value={multiContent ? versionsPerContent : variantCount}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (multiContent) setVersionsPerContent(n);
-                      else setVariantCount(n);
-                    }}
-                    className="w-full accent-indigo-500"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-600 mt-0.5 px-0.5">
-                    {multiContent ? (<><span>1</span><span>2</span><span>3</span></>) : (<><span>1</span><span>5</span><span>10</span></>)}
-                  </div>
-                  {multiContent && (
-                    <p className="text-[11px] text-brand mt-1.5 bg-canvas border border-brand/20 rounded px-2 py-1">
-                      Sẽ tạo <b>{totalInMulti}</b> banner ({effectiveContents} content × {versionsPerContent} phiên bản).
-                      {nonEmptyContents === 0 && ' Nhập ít nhất một content để bắt đầu.'}
-                    </p>
-                  )}
-                </div>
+                <OutputRow
+                  aspectRatio={aspectRatio}
+                  aspectRatios={currentAspectRatios}
+                  onChangeAspect={setAspectRatio}
+                  quality={imageSize}
+                  qualities={['1K', '2K', '4K']}
+                  isQualityDisabled={isResolutionDisabled}
+                  onChangeQuality={setImageSize}
+                  qtyLabel={multiContent ? 'Version / content' : 'Số bản'}
+                  qty={versions}
+                  qtyMax={multiContent ? MAX_VERSIONS_PER_CONTENT : 10}
+                  onChangeQty={(n) => multiContent ? setVersionsPerContent(n) : setVariantCount(n)}
+                  totalPreview={total}
+                  totalHint={multiContent
+                    ? `${effectiveContents} content × ${versions} version`
+                    : undefined}
+                />
               );
             })()}
-
-            {/* Quality Selection */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                <Maximize2 size={14} /> Quality
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {['1K', '2K', '4K'].map(size => {
-                  const disabled = isResolutionDisabled(size);
-                  const active = imageSize === size;
-                  const credit = isGptImage2
-                    ? (size === '1K' ? '0.81 cr' : size === '2K' ? '1.35 cr' : '3.2 cr')
-                    : (size === '4K' ? '4 cr' : '3 cr');
-                  return (
-                    <button
-                      key={size}
-                      onClick={() => !disabled && setImageSize(size)}
-                      disabled={disabled}
-                      title={disabled ? `Not supported with aspect_ratio "${aspectRatio}"` : undefined}
-                      className={`text-xs py-2 rounded-md border transition-all ${
-                        disabled
-                          ? 'bg-surface border-line text-gray-600 cursor-not-allowed opacity-50'
-                          : active
-                            ? `${accent.bg} ${accent.border} text-white`
-                            : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                      }`}
-                    >
-                      {size}
-                      {backend === 'coachio' && (
-                        <span className={`block text-[9px] mt-0.5 ${active && !disabled ? 'text-white/70' : 'text-subtle'}`}>{credit}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 block">Aspect Ratio</label>
-              <div className="grid grid-cols-3 gap-2">
-                {currentAspectRatios.map(ratio => {
-                  const active = aspectRatio === ratio;
-                  return (
-                    <button
-                      key={ratio}
-                      onClick={() => setAspectRatio(ratio)}
-                      className={`text-xs py-2 rounded-md border transition-all ${
-                        active
-                          ? `${accent.bg} ${accent.border} text-white`
-                          : 'bg-raised border-line-strong text-fg hover:bg-raised-2'
-                      }`}
-                    >
-                      {ratio}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
             {/* Content — compact primary + variants chip → MultiContentModal (Sprint H3) */}
             <ContentSection
@@ -1061,34 +957,31 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
             <div className="mb-4" />
 
-            {/* Banner Type */}
-            <div className="mb-4">
-              <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
-                <Megaphone size={14} /> Loại banner
+            {/* Prompt Adjustments — kept inline (small textarea) */}
+            <div>
+              <label className="text-[10px] text-subtle uppercase tracking-wider block mb-1">
+                Prompt adjustments (tuỳ chọn)
               </label>
-              <select
-                value={bannerType}
-                onChange={(e) => setBannerType(e.target.value as BannerType)}
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-fg focus:outline-none focus:border-brand transition-colors"
-              >
-                {BANNER_TYPE_OPTIONS.map(o => (
-                  <option key={o.id} value={o.id}>{o.label}</option>
-                ))}
-              </select>
-              <p className="text-[11px] text-subtle mt-1 leading-snug">
-                {BANNER_TYPE_OPTIONS.find(o => o.id === bannerType)?.hint}
-              </p>
-            </div>
-
-            <div className="mb-2">
-              <label className="text-sm text-muted mb-1 block">Prompt Adjustments (Optional)</label>
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                placeholder="e.g. Make the background darker..."
-                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand transition-colors h-20 resize-none"
+                placeholder="e.g. Make background darker, more vibrant colors..."
+                className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-16 resize-none"
               />
             </div>
+
+            {/* Advanced — collapsed, holds model + banner type (Sprint H6) */}
+            <AdvancedPopover
+              coachioModel={coachioModel}
+              coachioModels={[
+                { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
+                { id: 'gpt_image_2', name: 'GPT Image 2' },
+              ]}
+              onChangeCoachioModel={setCoachioModel}
+              bannerType={bannerType}
+              bannerTypeOptions={BANNER_TYPE_OPTIONS}
+              onChangeBannerType={(id) => setBannerType(id as BannerType)}
+            />
           </div>
 
           {errorMsg && (
