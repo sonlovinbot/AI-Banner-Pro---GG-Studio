@@ -12,10 +12,9 @@ import {
 import { BrandBrief } from '../types';
 import { listSelectedBriefsForBrand } from '../services/brandBriefService';
 import { BrandRow } from './banner/BrandRow';
-import { BriefsModal } from './banner/BriefsModal';
 import { ReferencesRow } from './banner/ReferencesRow';
 import { ReferencePickerModal } from './banner/ReferencePickerModal';
-import { IndustryPickerModal } from './banner/IndustryPickerModal';
+import { IndustryPickerModal, MAX_INDUSTRY_REFS } from './banner/IndustryPickerModal';
 import { ContentSection } from './banner/ContentSection';
 import { MultiContentModal } from './banner/MultiContentModal';
 import { OutputRow } from './banner/OutputRow';
@@ -141,14 +140,14 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [prodImages, setProdImages] = useState<UploadedImage[]>([]);
   const [userPrompt, setUserPrompt] = useState<string>("");
   const [brandContent, setBrandContent] = useState<string>("");
-  const [bannerType, setBannerType] = useState<BannerType>('general');
+  // Default to Performance Ads — most common use case for this tool.
+  const [bannerType, setBannerType] = useState<BannerType>('ads');
   const [multiContent, setMultiContent] = useState<boolean>(false);
   const [contents, setContents] = useState<string[]>([""]);
   // Brand briefs auto-loaded when multi-mode + brand picked. User can toggle
   // per-brief which to use as content variants in the gen plan.
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
-  const [showBriefsModal, setShowBriefsModal] = useState(false);
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
@@ -175,15 +174,26 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [industries, setIndustries] = useState<RefCategory[]>([]);
   const [selectedIndustry, setSelectedIndustry] = useState<string>('');
   const [industryRefs, setIndustryRefs] = useState<RefBanner[]>([]);
-  const [industryRefLimit, setIndustryRefLimit] = useState<number>(2);
+  // Which industry refs the user has ticked. Seeded to the first MAX
+  // whenever the ref list loads; user can retick in the picker modal.
+  const [selectedIndustryRefIds, setSelectedIndustryRefIds] = useState<Set<string>>(new Set());
 
   React.useEffect(() => {
     listRefCategories().then(setIndustries).catch(() => {});
   }, []);
 
   React.useEffect(() => {
-    if (!selectedIndustry) { setIndustryRefs([]); return; }
-    listRefBanners(selectedIndustry).then(setIndustryRefs).catch(() => setIndustryRefs([]));
+    if (!selectedIndustry) {
+      setIndustryRefs([]);
+      setSelectedIndustryRefIds(new Set());
+      return;
+    }
+    listRefBanners(selectedIndustry)
+      .then(refs => {
+        setIndustryRefs(refs);
+        setSelectedIndustryRefIds(new Set(refs.slice(0, MAX_INDUSTRY_REFS).map(r => r.id)));
+      })
+      .catch(() => { setIndustryRefs([]); setSelectedIndustryRefIds(new Set()); });
   }, [selectedIndustry]);
 
   // Migrate counts surfaced in case user has legacy localStorage items
@@ -478,10 +488,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     let imageUrl: string;
     const brandContentToUse = contentForThis ?? brandContent;
 
-    // Industry refs: pick first N admin-curated banners for the selected
-    // industry and pass their URLs + insights through to Coachio so the
-    // gen is steered toward the curated template language.
-    const adminRefs = industryRefs.slice(0, industryRefLimit);
+    // Industry refs: user tick/untick which curated refs to teach the model.
+    // Hard cap to MAX_INDUSTRY_REFS regardless of state (defensive). Refs
+    // are style-only — the safety rule is embedded in insightsToPromptHint.
+    const adminRefs = industryRefs
+      .filter(r => selectedIndustryRefIds.has(r.id))
+      .slice(0, MAX_INDUSTRY_REFS);
     const adminRefUrls = adminRefs.map(r => r.imageUrl);
     const adminInsightHint = insightsToPromptHint(adminRefs);
 
@@ -772,7 +784,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* References — 3 compact cards, each opens picker modal */}
+          {/* References — 3 compact cards, each opens picker modal.
+              Style card dims when an industry is picked (industry refs cover
+              styling and adding manual style refs is optional then). */}
           <ReferencesRow
             styleImages={refImages}
             productImages={prodImages}
@@ -785,7 +799,14 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                 : undefined
             }
             industryRefCount={
-              selectedIndustry ? Math.min(industryRefLimit, industryRefs.length) : undefined
+              selectedIndustry
+                ? Math.min(selectedIndustryRefIds.size, MAX_INDUSTRY_REFS)
+                : undefined
+            }
+            styleDisabledHint={
+              selectedIndustry && selectedIndustryRefIds.size > 0
+                ? 'Ngành đã cover style'
+                : undefined
             }
             onOpenStyle={() => setShowStyleModal(true)}
             onOpenProduct={() => setShowProductModal(true)}
@@ -794,16 +815,13 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
 
           <div className="h-px bg-raised" />
 
-          {/* Brand — compact row + BriefsModal trigger */}
+          {/* Brand — compact row only. Briefs live inside MultiContentModal */}
           <BrandRow
             projects={brandProjects}
             activeBrandId={activeBrandId}
             onApply={applyBrandProject}
             onClear={clearBrandSelection}
             onNavigate={onNavigate}
-            briefsSelectedCount={enabledBriefIds.size}
-            briefsTotalCount={brandBriefs.length}
-            onOpenBriefsModal={() => setShowBriefsModal(true)}
           />
 
           {/* Configuration wrapper — bundles the section-below-references */}
@@ -963,17 +981,6 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         <ApiKeySettings onClose={() => setShowApiKeySettings(false)} />
       )}
 
-      {/* Brand Briefs picker (Sprint H1) */}
-      {showBriefsModal && (
-        <BriefsModal
-          briefs={brandBriefs}
-          enabledIds={enabledBriefIds}
-          onChangeEnabled={setEnabledBriefIds}
-          onClose={() => setShowBriefsModal(false)}
-          onNavigateToBrandStyle={onNavigate}
-        />
-      )}
-
       {/* Style / Product reference pickers (Sprint H2) */}
       {showStyleModal && (
         <ReferencePickerModal
@@ -1005,8 +1012,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           selectedIndustry={selectedIndustry}
           onChangeIndustry={setSelectedIndustry}
           industryRefs={industryRefs}
-          industryRefLimit={industryRefLimit}
-          onChangeLimit={setIndustryRefLimit}
+          selectedRefIds={selectedIndustryRefIds}
+          onChangeSelectedRefIds={setSelectedIndustryRefIds}
           onClose={() => setShowIndustryModal(false)}
         />
       )}
@@ -1014,14 +1021,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         <MultiContentModal
           contents={contents}
           onChangeContents={setContents}
-          enabledBriefs={brandBriefs.filter(b => enabledBriefIds.has(b.id))}
-          onUnlinkBrief={(id) => {
-            const next = new Set(enabledBriefIds);
-            next.delete(id);
-            setEnabledBriefIds(next);
-          }}
+          allBriefs={brandBriefs}
+          enabledBriefIds={enabledBriefIds}
+          onChangeEnabledBriefIds={setEnabledBriefIds}
           onSaveSnippet={(c) => saveContentSnippet(c)}
           onOpenLibrary={() => { setShowMultiContentModal(false); setShowBrandLibrary(true); }}
+          onNavigateToBrandStyle={onNavigate}
           maxContents={MAX_CONTENTS}
           onClose={() => setShowMultiContentModal(false)}
         />

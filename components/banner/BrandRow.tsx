@@ -1,10 +1,9 @@
 // Compact top-of-sidebar Brand block for BannerTool.
-// Replaces the old <Configuration> → <Brand> section (with big dropdown + 2
-// icon buttons stacked). One row now: pill selector + settings icon + optional
-// brief chip.
+// One row: pill selector + clear + settings icon. Brand briefs live inside
+// the MultiContentModal (Content variants → Briefs tab), not here.
 
 import React from 'react';
-import { Palette, Settings2, X, Sparkles } from 'lucide-react';
+import { Palette, Settings2, X } from 'lucide-react';
 import { BrandProject, AppPage } from '../../types';
 
 interface Props {
@@ -13,20 +12,11 @@ interface Props {
   onApply: (id: string) => void;
   onClear: () => void;
   onNavigate: (page: AppPage) => void;
-
-  /** Number of briefs currently selected for this run — shown as a chip
-   *  that opens the BriefsModal when clicked. Hide chip if 0. */
-  briefsSelectedCount: number;
-  briefsTotalCount: number;
-  onOpenBriefsModal: () => void;
 }
 
 export const BrandRow: React.FC<Props> = ({
   projects, activeBrandId, onApply, onClear, onNavigate,
-  briefsSelectedCount, briefsTotalCount, onOpenBriefsModal,
 }) => {
-  const active = projects.find(p => p.id === activeBrandId);
-
   return (
     <section className="space-y-2">
       <label className="text-xs font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
@@ -69,22 +59,6 @@ export const BrandRow: React.FC<Props> = ({
             <Settings2 size={14} />
           </button>
         </div>
-      )}
-
-      {/* Brief chip — only when brand has briefs */}
-      {active && briefsTotalCount > 0 && (
-        <button
-          onClick={onOpenBriefsModal}
-          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-brand/10 border border-brand/30 hover:bg-brand/15 transition-colors text-left"
-        >
-          <span className="flex items-center gap-2 min-w-0">
-            <Sparkles size={12} className="text-brand shrink-0" />
-            <span className="text-xs text-fg font-medium truncate">
-              {briefsSelectedCount}/{briefsTotalCount} brief dùng cho gen này
-            </span>
-          </span>
-          <span className="text-[11px] text-brand font-medium shrink-0 hover:underline">Sửa</span>
-        </button>
       )}
     </section>
   );

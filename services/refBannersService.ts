@@ -201,10 +201,25 @@ export async function extractInsightsFromUrl(imageUrl: string): Promise<RefBanne
 // ─── Helpers: prompt enrichment for BannerTool ───
 
 /** Convert insights → a short text block to inject into the Coachio gen prompt
- *  so the model is steered toward the same composition / palette / title style. */
+ *  so the model is steered toward the same composition / palette / title style.
+ *
+ *  IMPORTANT: The curated refs are STYLE-ONLY teachers. The model MUST NOT
+ *  reuse people, speakers, faces, logos, or specific imagery from them.
+ *  The safety rule is prepended so it applies even when insights are missing. */
 export function insightsToPromptHint(refs: RefBanner[]): string {
   if (refs.length === 0) return '';
-  const lines: string[] = ['', 'Template references (from curated library):'];
+  const lines: string[] = [
+    '',
+    'CATEGORY REFERENCES — STYLE-ONLY GUIDANCE:',
+    'The following curated banners teach layout, typography, color palette, composition, and hierarchy ONLY.',
+    'Absolute rules:',
+    '- Do NOT copy any person, speaker, face, portrait, character, or human likeness from the references.',
+    '- Do NOT reuse any product image, logo, mascot, or specific imagery seen in the references.',
+    '- Do NOT copy exact text, headlines, or brand names from the references.',
+    '- ONLY learn: overall layout, typography treatment, color scheme, spatial hierarchy, and banner best-practices for this category.',
+    '',
+    'Curated ref insights:',
+  ];
   refs.forEach((r, i) => {
     const ins = r.insights;
     if (!ins) return;

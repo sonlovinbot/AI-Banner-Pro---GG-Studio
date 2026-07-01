@@ -16,6 +16,10 @@ interface Props {
   industryLabel?: string;   // e.g. "🎓 Giáo dục / Workshop"
   industryRefCount?: number; // # admin refs auto-loaded
 
+  /** If set, Style card is rendered dimmed with this hint text overlay —
+   *  used when industry refs are active so Style becomes optional. */
+  styleDisabledHint?: string;
+
   onOpenStyle: () => void;
   onOpenProduct: () => void;
   onOpenIndustry: () => void;
@@ -23,6 +27,7 @@ interface Props {
 
 export const ReferencesRow: React.FC<Props> = ({
   styleImages, productImages, industryLabel, industryRefCount,
+  styleDisabledHint,
   onOpenStyle, onOpenProduct, onOpenIndustry,
 }) => {
   return (
@@ -37,6 +42,7 @@ export const ReferencesRow: React.FC<Props> = ({
           count={styleImages.length}
           preview={styleImages.slice(0, 3).map(i => i.base64 || '')}
           onClick={onOpenStyle}
+          dimHint={styleDisabledHint}
         />
         <RefCard
           icon={<Package size={14} />}
@@ -63,20 +69,25 @@ const RefCard: React.FC<{
   count: number;
   preview: string[];
   onClick: () => void;
-}> = ({ icon, title, count, preview, onClick }) => {
+  dimHint?: string;
+}> = ({ icon, title, count, preview, onClick, dimHint }) => {
   const empty = count === 0;
+  const dim = !!dimHint && empty;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group aspect-square rounded-lg border transition-all flex flex-col items-stretch p-2 text-left ${
-        empty
-          ? 'border-dashed border-line-strong bg-canvas hover:border-brand/50 hover:bg-brand/5'
-          : 'border-line bg-canvas hover:border-brand/50 hover:bg-raised'
+      className={`group aspect-square rounded-lg border transition-all flex flex-col items-stretch p-2 text-left relative ${
+        dim
+          ? 'border-dashed border-line bg-canvas/50 opacity-60 hover:opacity-100 hover:border-brand/40'
+          : empty
+            ? 'border-dashed border-line-strong bg-canvas hover:border-brand/50 hover:bg-brand/5'
+            : 'border-line bg-canvas hover:border-brand/50 hover:bg-raised'
       }`}
+      title={dimHint || undefined}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-muted group-hover:text-fg flex items-center gap-1">
+        <span className={`flex items-center gap-1 ${dim ? 'text-subtle' : 'text-muted group-hover:text-fg'}`}>
           {icon}
           <span className="text-[11px] font-medium">{title}</span>
         </span>
@@ -88,8 +99,13 @@ const RefCard: React.FC<{
       </div>
       <div className="flex-1 min-h-0">
         {empty ? (
-          <div className="w-full h-full flex items-center justify-center text-muted group-hover:text-brand transition-colors">
+          <div className="w-full h-full flex flex-col items-center justify-center text-muted group-hover:text-brand transition-colors">
             <Plus size={20} strokeWidth={1.5} />
+            {dimHint && (
+              <p className="text-[9px] text-subtle mt-1 leading-tight text-center line-clamp-2 px-1">
+                {dimHint}
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-0.5 w-full h-full overflow-hidden rounded">
