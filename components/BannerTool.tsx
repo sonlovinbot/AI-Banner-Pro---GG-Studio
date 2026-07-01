@@ -489,12 +489,16 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     const brandContentToUse = contentForThis ?? brandContent;
 
     // Industry refs: user tick/untick which curated refs to teach the model.
-    // Hard cap to MAX_INDUSTRY_REFS regardless of state (defensive). Refs
-    // are style-only — the safety rule is embedded in insightsToPromptHint.
+    // Text-only path — image URLs are NEVER sent to Coachio because:
+    //   1. GPT Image 2 / Nano Banana Pro cap at 5 refs total, and user's
+    //      style + product refs already claim most of that budget.
+    //   2. Insights (layout / palette / composition) carry the style intent
+    //      as text without eating the reference slot budget.
+    // adminRefUrls stays empty; only the hint text is passed.
     const adminRefs = industryRefs
       .filter(r => selectedIndustryRefIds.has(r.id))
       .slice(0, MAX_INDUSTRY_REFS);
-    const adminRefUrls = adminRefs.map(r => r.imageUrl);
+    const adminRefUrls: string[] = [];
     const adminInsightHint = insightsToPromptHint(adminRefs);
 
     if (backend === 'coachio') {
@@ -827,77 +831,82 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           {/* Configuration wrapper — bundles the section-below-references */}
           <div className="space-y-4">
 
-            {/* Output row — Aspect / Quality / Qty inline selects (Sprint H5) */}
+            {/* Output row — Aspect / Quality / Qty inline selects (Sprint H5)
+                totalVariants is the single source of truth used by both the
+                Content chip and this row's preview. */}
             {(() => {
-              const nonEmptyContents = multiContent ? contents.filter(c => c.trim()).length : 0;
+              const nonEmptyContents = contents.filter(c => c.trim()).length;
               const enabledBriefCount = enabledBriefIds.size;
-              const effectiveContents = Math.max(1, nonEmptyContents + enabledBriefCount);
+              const totalVariants = multiContent
+                ? nonEmptyContents + enabledBriefCount
+                : 0;
+              // At least 1 content is always sent (falls back to empty in
+              // single-mode). Used for total banner preview math.
+              const effectiveContents = Math.max(1, multiContent ? totalVariants : 1);
               const versions = multiContent ? versionsPerContent : variantCount;
               const total = multiContent ? effectiveContents * versions : versions;
               return (
-                <OutputRow
-                  aspectRatio={aspectRatio}
-                  aspectRatios={currentAspectRatios}
-                  onChangeAspect={setAspectRatio}
-                  quality={imageSize}
-                  qualities={['1K', '2K', '4K']}
-                  isQualityDisabled={isResolutionDisabled}
-                  onChangeQuality={setImageSize}
-                  qtyLabel={multiContent ? 'Version / content' : 'Số bản'}
-                  qty={versions}
-                  qtyMax={multiContent ? MAX_VERSIONS_PER_CONTENT : 10}
-                  onChangeQty={(n) => multiContent ? setVersionsPerContent(n) : setVariantCount(n)}
-                  totalPreview={total}
-                  totalHint={multiContent
-                    ? `${effectiveContents} content × ${versions} version`
-                    : undefined}
-                />
+                <>
+                  <OutputRow
+                    aspectRatio={aspectRatio}
+                    aspectRatios={currentAspectRatios}
+                    onChangeAspect={setAspectRatio}
+                    quality={imageSize}
+                    qualities={['1K', '2K', '4K']}
+                    isQualityDisabled={isResolutionDisabled}
+                    onChangeQuality={setImageSize}
+                    qtyLabel={multiContent ? 'Bản / biến thể' : 'Số bản'}
+                    qty={versions}
+                    qtyMax={multiContent ? MAX_VERSIONS_PER_CONTENT : 10}
+                    onChangeQty={(n) => multiContent ? setVersionsPerContent(n) : setVariantCount(n)}
+                    totalPreview={total}
+                    totalHint={multiContent
+                      ? `${effectiveContents} biến thể × ${versions} bản`
+                      : undefined}
+                  />
+
+                  {/* Content — compact primary + variants chip → MultiContentModal (Sprint H3) */}
+                  <ContentSection
+                    primaryContent={multiContent ? (contents[0] || '') : brandContent}
+                    onChangePrimary={(v) => {
+                      if (multiContent) {
+                        setContents(prev => {
+                          const next = [...prev];
+                          next[0] = v;
+                          return next;
+                        });
+                      } else {
+                        setBrandContent(v);
+                      }
+                    }}
+                    multiOn={multiContent}
+                    onToggleMulti={(on) => {
+                      setMultiContent(on);
+                      if (on && contents.every(c => !c.trim()) && brandContent.trim()) {
+                        setContents([brandContent.trim()]);
+                      }
+                    }}
+                    totalVariants={totalVariants}
+                    onOpenManage={() => setShowMultiContentModal(true)}
+                    onSavePrimarySnippet={() => handleBrandSave()}
+                    onOpenLibrary={() => setShowBrandLibrary(true)}
+                    librarySize={brandLibrary.length}
+                  />
+                </>
               );
             })()}
-
-            {/* Content — compact primary + variants chip → MultiContentModal (Sprint H3) */}
-            <ContentSection
-              primaryContent={multiContent ? (contents[0] || '') : brandContent}
-              onChangePrimary={(v) => {
-                if (multiContent) {
-                  setContents(prev => {
-                    const next = [...prev];
-                    next[0] = v;
-                    return next;
-                  });
-                } else {
-                  setBrandContent(v);
-                }
-              }}
-              multiOn={multiContent}
-              onToggleMulti={(on) => {
-                setMultiContent(on);
-                if (on && contents.every(c => !c.trim()) && brandContent.trim()) {
-                  setContents([brandContent.trim()]);
-                }
-              }}
-              variantCount={
-                multiContent
-                  ? Math.max(0, contents.filter(c => c.trim()).length - 1) + enabledBriefIds.size
-                  : 0
-              }
-              onOpenManage={() => setShowMultiContentModal(true)}
-              onSavePrimarySnippet={() => handleBrandSave()}
-              onOpenLibrary={() => setShowBrandLibrary(true)}
-              librarySize={brandLibrary.length}
-            />
 
             <div className="mb-4" />
 
             {/* Prompt Adjustments — kept inline (small textarea) */}
             <div>
               <label className="text-[10px] text-subtle uppercase tracking-wider block mb-1">
-                Prompt adjustments (tuỳ chọn)
+                Điều chỉnh prompt (tuỳ chọn)
               </label>
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                placeholder="e.g. Make background darker, more vibrant colors..."
+                placeholder="VD: Nền tối hơn, màu tươi hơn..."
                 className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-16 resize-none"
               />
             </div>

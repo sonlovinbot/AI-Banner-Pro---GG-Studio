@@ -1,7 +1,7 @@
 // Compact Content section for BannerTool sidebar.
 // Old UI stacked "Brand Content" label + Save/Library buttons + textarea +
 // (multi mode) more textareas + toggle checkbox. Now: one primary textarea +
-// a Variants chip that opens the MultiContentModal.
+// a "biến thể" chip that opens the MultiContentModal.
 
 import React from 'react';
 import { Type, ListPlus, FolderOpen, Save } from 'lucide-react';
@@ -11,14 +11,14 @@ interface Props {
   primaryContent: string;
   onChangePrimary: (v: string) => void;
 
-  /** Whether multi-content mode is on. When on, primaryContent is the
-   *  first item of contents[]; extra variants shown as a chip that opens
-   *  the manage modal. */
+  /** Whether multi-content mode is on. */
   multiOn: boolean;
   onToggleMulti: (on: boolean) => void;
 
-  /** Count of extra variants (manual + briefs) beyond the primary. */
-  variantCount: number;
+  /** Total distinct content strings in multi mode (non-empty manual +
+   *  enabled briefs). Single source of truth — chip and output preview both
+   *  derive from this same number. */
+  totalVariants: number;
   onOpenManage: () => void;
 
   /** Library actions on the primary textarea. */
@@ -30,14 +30,14 @@ interface Props {
 export const ContentSection: React.FC<Props> = ({
   primaryContent, onChangePrimary,
   multiOn, onToggleMulti,
-  variantCount, onOpenManage,
+  totalVariants, onOpenManage,
   onSavePrimarySnippet, onOpenLibrary, librarySize = 0,
 }) => {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-xs font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
-          <Type size={12} /> Content
+          <Type size={12} /> Nội dung
         </label>
         <div className="flex items-center gap-1">
           {onSavePrimarySnippet && (
@@ -45,7 +45,7 @@ export const ContentSection: React.FC<Props> = ({
               onClick={onSavePrimarySnippet}
               disabled={!primaryContent.trim()}
               className="text-[10px] px-2 py-0.5 rounded bg-canvas border border-line hover:bg-raised text-muted hover:text-fg disabled:opacity-40"
-              title="Lưu content vào thư viện"
+              title="Lưu nội dung vào thư viện"
             >
               <Save size={10} className="inline mr-0.5" /> Lưu
             </button>
@@ -54,7 +54,7 @@ export const ContentSection: React.FC<Props> = ({
             <button
               onClick={onOpenLibrary}
               className="text-[10px] px-2 py-0.5 rounded bg-canvas border border-line hover:bg-raised text-muted hover:text-fg flex items-center gap-1"
-              title="Thư viện brand content"
+              title="Thư viện nội dung"
             >
               <FolderOpen size={10} /> Thư viện
               {librarySize > 0 && (
@@ -70,7 +70,7 @@ export const ContentSection: React.FC<Props> = ({
       <textarea
         value={primaryContent}
         onChange={(e) => onChangePrimary(e.target.value)}
-        placeholder="e.g. 'Summer Sale 50% Off — Brand Name...'"
+        placeholder="VD: 'Sale hè 50% — 500 Skills MKT...'"
         className="w-full bg-canvas border border-line rounded-md p-3 text-sm text-fg focus:outline-none focus:border-brand h-20 resize-none"
       />
 
@@ -87,10 +87,10 @@ export const ContentSection: React.FC<Props> = ({
           <ListPlus size={12} className={multiOn ? 'text-brand' : 'text-muted'} />
           <span className={`text-xs font-medium truncate ${multiOn ? 'text-fg' : 'text-muted'}`}>
             {multiOn
-              ? variantCount === 0
-                ? 'Multi mode ON — chưa có variant'
-                : `${variantCount + 1} variants tổng cộng`
-              : '+ Thêm content variants'}
+              ? totalVariants === 0
+                ? 'Đang bật — chưa có biến thể nào'
+                : `${totalVariants} biến thể sẽ dùng`
+              : '+ Thêm biến thể nội dung'}
           </span>
         </span>
         <span className={`text-[11px] font-medium shrink-0 hover:underline ${multiOn ? 'text-brand' : 'text-muted'}`}>
@@ -107,7 +107,7 @@ export const ContentSection: React.FC<Props> = ({
           className="accent-brand"
         />
         <span className="text-[11px] text-muted">
-          Multi-content mode (tạo nhiều content khác nhau)
+          Chế độ nhiều biến thể (mỗi biến thể = 1 nội dung khác nhau)
         </span>
       </label>
     </section>

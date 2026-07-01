@@ -38,17 +38,17 @@ export const OutputRow: React.FC<Props> = ({
   return (
     <section className="space-y-2">
       <label className="text-xs font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
-        <Sliders size={12} /> Output
+        <Sliders size={12} /> Đầu ra
       </label>
       <div className="grid grid-cols-3 gap-2">
         <Select
-          label="Aspect"
+          label="Tỉ lệ"
           value={aspectRatio}
           options={aspectRatios.map(r => ({ value: r, label: r }))}
           onChange={onChangeAspect}
         />
         <Select
-          label="Quality"
+          label="Độ nét"
           value={quality}
           options={qualities.map(q => ({
             value: q,

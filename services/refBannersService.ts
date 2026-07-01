@@ -200,37 +200,55 @@ export async function extractInsightsFromUrl(imageUrl: string): Promise<RefBanne
 
 // ─── Helpers: prompt enrichment for BannerTool ───
 
-/** Convert insights → a short text block to inject into the Coachio gen prompt
- *  so the model is steered toward the same composition / palette / title style.
+/** Convert insights → a text block injected into the gen prompt.
  *
- *  IMPORTANT: The curated refs are STYLE-ONLY teachers. The model MUST NOT
- *  reuse people, speakers, faces, logos, or specific imagery from them.
- *  The safety rule is prepended so it applies even when insights are missing. */
+ *  Important design choice: curated industry refs are fed to the model as
+ *  TEXT ONLY, never as image URLs. Rationale:
+ *    - Coachio backends (GPT Image 2, Nano Banana Pro) hard-cap at 5 refs.
+ *      User's own style + product refs already claim 2-3 slots, so industry
+ *      images would push over the cap and fail the request.
+ *    - Text descriptions carry the layout / palette / composition intent
+ *      just as well for style-only guidance.
+ *    - Removes any risk of the model copying people / logos / specific
+ *      imagery from the reference images.
+ *
+ *  Even when insights are missing (admin didn't extract), we still emit a
+ *  short summary line (label + count) so the model knows there IS a curated
+ *  visual language for this category. */
 export function insightsToPromptHint(refs: RefBanner[]): string {
   if (refs.length === 0) return '';
   const lines: string[] = [
     '',
-    'CATEGORY REFERENCES — STYLE-ONLY GUIDANCE:',
-    'The following curated banners teach layout, typography, color palette, composition, and hierarchy ONLY.',
-    'Absolute rules:',
-    '- Do NOT copy any person, speaker, face, portrait, character, or human likeness from the references.',
-    '- Do NOT reuse any product image, logo, mascot, or specific imagery seen in the references.',
-    '- Do NOT copy exact text, headlines, or brand names from the references.',
-    '- ONLY learn: overall layout, typography treatment, color scheme, spatial hierarchy, and banner best-practices for this category.',
+    'CATEGORY VISUAL LANGUAGE (text-only guidance from curated library):',
+    `${refs.length} reference banner${refs.length > 1 ? 's' : ''} were selected from this category's curated set.`,
+    'Rules — apply strictly:',
+    '- Copy ONLY: layout, typography treatment, color palette, spatial hierarchy, and category-appropriate banner best-practices.',
+    '- Do NOT invent people, speakers, faces, or specific imagery based on these refs.',
+    '- Do NOT copy exact text, headlines, or brand names from the refs.',
     '',
-    'Curated ref insights:',
+    'Curated ref summaries:',
   ];
+
   refs.forEach((r, i) => {
     const ins = r.insights;
-    if (!ins) return;
     const parts: string[] = [];
-    if (ins.layout) parts.push(`layout: ${ins.layout}`);
-    if (ins.title_position) parts.push(`title: ${ins.title_position}`);
-    if (ins.composition) parts.push(`composition: ${ins.composition}`);
-    if (ins.color_palette?.length) parts.push(`palette: ${ins.color_palette.join(', ')}`);
-    if (ins.style_notes) parts.push(`style: ${ins.style_notes}`);
-    if (parts.length === 0) return;
-    lines.push(`Ref ${i + 1}${r.label ? ` (${r.label})` : ''}: ${parts.join('; ')}`);
+    if (ins?.layout)         parts.push(`layout: ${ins.layout}`);
+    if (ins?.title_position) parts.push(`title position: ${ins.title_position}`);
+    if (ins?.composition)    parts.push(`composition: ${ins.composition}`);
+    if (ins?.color_palette?.length) parts.push(`palette: ${ins.color_palette.join(', ')}`);
+    if (ins?.style_notes)    parts.push(`style: ${ins.style_notes}`);
+
+    // Fallback: no AI insights yet → still surface label so the model has
+    // something concrete to anchor on.
+    if (parts.length === 0) {
+      const fallback = r.label ? `(${r.label}) — no detailed insights extracted; use category defaults.` : 'no detailed insights yet; use category defaults.';
+      lines.push(`Ref ${i + 1}: ${fallback}`);
+      return;
+    }
+
+    const labelPart = r.label ? ` (${r.label})` : '';
+    lines.push(`Ref ${i + 1}${labelPart}: ${parts.join('; ')}`);
   });
+
   return lines.join('\n');
 }
