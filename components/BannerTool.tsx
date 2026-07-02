@@ -12,7 +12,7 @@ import {
   listRefCategories, listRefBanners, insightsToPromptHint,
 } from '../services/refBannersService';
 import { BrandBrief } from '../types';
-import { listSelectedBriefsForBrand } from '../services/brandBriefService';
+import { listSelectedBriefsForBrand, deleteBrief } from '../services/brandBriefService';
 import { BrandRow } from './banner/BrandRow';
 import { ReferencesRow } from './banner/ReferencesRow';
 import { ReferencePickerModal } from './banner/ReferencePickerModal';
@@ -252,6 +252,21 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
       setHistory(prev => prev.filter(h => !ids.includes(h.id)));
     } catch (e: any) {
       console.warn('deleteHistorySession failed', e);
+    }
+  }, []);
+
+  const removeBrandBrief = React.useCallback(async (briefId: string) => {
+    if (!confirm('Xoá brief này khỏi brand? Không undo được (sẽ mất luôn ở Brand Style).')) return;
+    try {
+      await deleteBrief(briefId);
+      setBrandBriefs(prev => prev.filter(b => b.id !== briefId));
+      setEnabledBriefIds(prev => {
+        const next = new Set(prev);
+        next.delete(briefId);
+        return next;
+      });
+    } catch (e: any) {
+      alert(`Xoá brief lỗi: ${e?.message || 'unknown'}`);
     }
   }, []);
 
@@ -1156,6 +1171,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           allBriefs={brandBriefs}
           enabledBriefIds={enabledBriefIds}
           onChangeEnabledBriefIds={setEnabledBriefIds}
+          onDeleteBrief={removeBrandBrief}
           urlBriefs={urlBriefs}
           onChangeUrlBriefs={setUrlBriefs}
           enabledUrlBriefIds={enabledUrlBriefIds}

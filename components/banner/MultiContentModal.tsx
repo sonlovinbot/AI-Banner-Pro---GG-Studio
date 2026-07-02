@@ -36,6 +36,9 @@ interface Props {
   allBriefs: BrandBrief[];
   enabledBriefIds: Set<string>;
   onChangeEnabledBriefIds: (next: Set<string>) => void;
+  /** Xoá luôn 1 brand brief khỏi DB (không chỉ untick). Optional — chỉ hiện
+   *  button nếu parent truyền handler. */
+  onDeleteBrief?: (briefId: string) => Promise<void>;
 
   /** URL-crawled briefs (session-scoped, không lưu brand). */
   urlBriefs: BrandBrief[];
@@ -53,7 +56,7 @@ interface Props {
 
 export const MultiContentModal: React.FC<Props> = ({
   contents, onChangeContents,
-  allBriefs, enabledBriefIds, onChangeEnabledBriefIds,
+  allBriefs, enabledBriefIds, onChangeEnabledBriefIds, onDeleteBrief,
   urlBriefs, onChangeUrlBriefs, enabledUrlBriefIds, onChangeEnabledUrlBriefIds,
   onSaveSnippet, onOpenLibrary, onNavigateToBrandStyle,
   maxContents = 5,
@@ -260,65 +263,8 @@ export const MultiContentModal: React.FC<Props> = ({
             </button>
           </section>
 
-          {/* ─── Brand briefs (compact) ─── */}
-          <section className="space-y-2 border-t border-line pt-4">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={11} className="text-brand" />
-                Brand briefs ({enabledBriefCnt}/{allBriefs.length})
-              </p>
-              {allBriefs.length > 0 && (
-                <div className="flex items-center gap-2 text-[10px]">
-                  <button
-                    onClick={enableAllBriefs}
-                    disabled={enabledBriefCnt === allBriefs.length}
-                    className="text-brand hover:underline disabled:opacity-40 disabled:no-underline"
-                  >
-                    Tất cả
-                  </button>
-                  <span className="text-subtle">·</span>
-                  <button
-                    onClick={clearBriefs}
-                    disabled={enabledBriefCnt === 0}
-                    className="text-muted hover:text-fg hover:underline disabled:opacity-40 disabled:no-underline"
-                  >
-                    Bỏ hết
-                  </button>
-                  {onNavigateToBrandStyle && (
-                    <>
-                      <span className="text-subtle">·</span>
-                      <button
-                        onClick={() => { onClose(); onNavigateToBrandStyle('brand-style'); }}
-                        className="text-muted hover:text-fg hover:underline"
-                        title="Sửa nội dung brief"
-                      >
-                        ✎ Sửa
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {allBriefs.length === 0 ? (
-              <div className="text-center py-4 text-[11px] text-subtle italic border border-dashed border-line rounded-md">
-                Brand này chưa có brief. Dùng URL Crawl bên dưới hoặc tạo trong Brand Style.
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {allBriefs.map(b => (
-                  <BriefCard
-                    key={b.id}
-                    brief={b}
-                    on={enabledBriefIds.has(b.id)}
-                    onToggle={() => toggleBrief(b.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* ─── URL Crawl briefs (NEW, session-scoped) ─── */}
+          {/* ─── URL Crawl briefs (đặt TRÊN Brand briefs — tick vào là hiện
+                phía trên khu vực brand briefs) ─── */}
           <section className="space-y-2 border-t border-line pt-4">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
@@ -408,6 +354,65 @@ export const MultiContentModal: React.FC<Props> = ({
               </div>
             )}
           </section>
+
+          {/* ─── Brand briefs (giờ nằm phía dưới URL Crawl) ─── */}
+          <section className="space-y-2 border-t border-line pt-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={11} className="text-brand" />
+                Brand briefs ({enabledBriefCnt}/{allBriefs.length})
+              </p>
+              {allBriefs.length > 0 && (
+                <div className="flex items-center gap-2 text-[10px]">
+                  <button
+                    onClick={enableAllBriefs}
+                    disabled={enabledBriefCnt === allBriefs.length}
+                    className="text-brand hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    Tất cả
+                  </button>
+                  <span className="text-subtle">·</span>
+                  <button
+                    onClick={clearBriefs}
+                    disabled={enabledBriefCnt === 0}
+                    className="text-muted hover:text-fg hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    Bỏ hết
+                  </button>
+                  {onNavigateToBrandStyle && (
+                    <>
+                      <span className="text-subtle">·</span>
+                      <button
+                        onClick={() => { onClose(); onNavigateToBrandStyle('brand-style'); }}
+                        className="text-muted hover:text-fg hover:underline"
+                        title="Sửa nội dung brief"
+                      >
+                        ✎ Sửa
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {allBriefs.length === 0 ? (
+              <div className="text-center py-4 text-[11px] text-subtle italic border border-dashed border-line rounded-md">
+                Brand này chưa có brief. Dùng URL Crawl phía trên hoặc tạo trong Brand Style.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {allBriefs.map(b => (
+                  <BriefCard
+                    key={b.id}
+                    brief={b}
+                    on={enabledBriefIds.has(b.id)}
+                    onToggle={() => toggleBrief(b.id)}
+                    onDelete={onDeleteBrief ? () => onDeleteBrief(b.id) : undefined}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
         <footer className="px-5 py-3 border-t border-line bg-surface flex items-center justify-between">
@@ -430,35 +435,56 @@ const BriefCard: React.FC<{
   brief: BrandBrief;
   on: boolean;
   onToggle: () => void;
+  onDelete?: () => void;
   accent?: 'brand' | 'info';
-}> = ({ brief: b, on, onToggle, accent = 'brand' }) => {
+}> = ({ brief: b, on, onToggle, onDelete, accent = 'brand' }) => {
   const activeBg   = accent === 'info' ? 'bg-info-soft border-info' : 'bg-brand/10 border-brand/40';
   const activeIcon = accent === 'info' ? 'bg-info text-white' : 'bg-brand text-white';
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onDelete) return;
+    onDelete();
+  };
+
   return (
-    <button
-      onClick={onToggle}
-      className={`w-full text-left rounded-md border p-2 transition-colors flex items-start gap-2 ${
+    <div
+      className={`group w-full rounded-md border transition-colors flex items-start gap-2 p-2 ${
         on ? activeBg : 'bg-canvas border-line hover:bg-raised'
       }`}
     >
-      <span className={`shrink-0 mt-0.5 w-4 h-4 rounded flex items-center justify-center ${
-        on ? activeIcon : 'border border-line bg-surface'
-      }`}>
-        {on && <CheckCircle size={11} />}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-[12px] font-medium text-fg leading-tight truncate">{b.title}</p>
-          <span className="text-[9px] font-mono uppercase text-subtle bg-raised border border-line px-1 py-px rounded shrink-0">
-            {TYPE_ABBR[b.briefType] || b.briefType}
-          </span>
+      <button
+        onClick={onToggle}
+        className="flex-1 min-w-0 flex items-start gap-2 text-left"
+      >
+        <span className={`shrink-0 mt-0.5 w-4 h-4 rounded flex items-center justify-center ${
+          on ? activeIcon : 'border border-line bg-surface'
+        }`}>
+          {on && <CheckCircle size={11} />}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-[12px] font-medium text-fg leading-tight truncate">{b.title}</p>
+            <span className="text-[9px] font-mono uppercase text-subtle bg-raised border border-line px-1 py-px rounded shrink-0">
+              {TYPE_ABBR[b.briefType] || b.briefType}
+            </span>
+          </div>
+          {b.headline && (
+            <p className="text-[11px] text-fg/70 leading-snug line-clamp-1 mt-0.5">
+              <span className="text-subtle font-mono mr-1">H:</span>{b.headline}
+            </p>
+          )}
         </div>
-        {b.headline && (
-          <p className="text-[11px] text-fg/70 leading-snug line-clamp-1 mt-0.5">
-            <span className="text-subtle font-mono mr-1">H:</span>{b.headline}
-          </p>
-        )}
-      </div>
-    </button>
+      </button>
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="shrink-0 p-1 rounded text-muted hover:text-danger hover:bg-danger-soft opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Xoá brief này khỏi brand"
+        >
+          <Trash2 size={11} />
+        </button>
+      )}
+    </div>
   );
 };
