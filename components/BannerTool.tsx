@@ -13,6 +13,13 @@ import {
 } from '../services/refBannersService';
 import { BrandBrief } from '../types';
 import { listSelectedBriefsForBrand, deleteBrief } from '../services/brandBriefService';
+import {
+  listUrlCrawlBriefs,
+  replaceUrlCrawlBriefs as replaceUrlCrawlBriefsCloud,
+  setUrlCrawlBriefsEnabled,
+  clearUrlCrawlBriefs as clearUrlCrawlBriefsCloud,
+} from '../services/urlCrawlBriefService';
+import { RawBrief } from '../services/contentImportService';
 import { BrandRow } from './banner/BrandRow';
 import { ReferencesRow } from './banner/ReferencesRow';
 import { ReferencePickerModal } from './banner/ReferencePickerModal';
@@ -150,39 +157,56 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   // per-brief which to use as content variants in the gen plan.
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
-  // URL Crawl briefs — persist to localStorage nên không mất khi refresh.
-  // Vẫn không lưu vào brand (session-scoped ở cấp browser thay vì trong-modal).
-  const [urlBriefs, setUrlBriefs] = useState<BrandBrief[]>(() => {
-    try {
-      const raw = localStorage.getItem('bannerAds:urlBriefs');
-      return raw ? (JSON.parse(raw) as BrandBrief[]) : [];
-    } catch { return []; }
-  });
-  const [enabledUrlBriefIds, setEnabledUrlBriefIds] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('bannerAds:enabledUrlBriefIds');
-      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set();
-    } catch { return new Set(); }
-  });
+  // URL Crawl briefs — persist trong Supabase table `url_crawl_briefs`.
+  // Single active batch per user: mỗi crawl mới wipe batch cũ (xem service).
+  const [urlBriefs, setUrlBriefs] = useState<BrandBrief[]>([]);
+  const [enabledUrlBriefIds, setEnabledUrlBriefIds] = useState<Set<string>>(new Set());
 
+  // Load URL crawl briefs từ Supabase khi mount.
   React.useEffect(() => {
-    try {
-      localStorage.setItem('bannerAds:urlBriefs', JSON.stringify(urlBriefs));
-    } catch (e) {
-      console.warn('Persist urlBriefs failed', e);
-    }
+    listUrlCrawlBriefs()
+      .then(briefs => {
+        setUrlBriefs(briefs);
+        setEnabledUrlBriefIds(
+          new Set(briefs.filter(b => b.isSelected).map(b => b.id)),
+        );
+      })
+      .catch(() => {
+        setUrlBriefs([]);
+        setEnabledUrlBriefIds(new Set());
+      });
+  }, []);
+
+  const handleUrlCrawlComplete = React.useCallback(async (sourceUrl: string, rawBriefs: RawBrief[]) => {
+    const persisted = await replaceUrlCrawlBriefsCloud(sourceUrl, rawBriefs);
+    setUrlBriefs(persisted);
+    // Default: enable all — user unticks những cái không muốn
+    setEnabledUrlBriefIds(new Set(persisted.map(b => b.id)));
+    return persisted;
+  }, []);
+
+  const handleToggleUrlBrief = React.useCallback(async (id: string, enabled: boolean) => {
+    await setUrlCrawlBriefsEnabled([id], enabled);
+    setEnabledUrlBriefIds(prev => {
+      const next = new Set(prev);
+      if (enabled) next.add(id); else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleSetAllUrlBriefsEnabled = React.useCallback(async (mode: 'all' | 'none') => {
+    const ids = urlBriefs.map(b => b.id);
+    if (ids.length === 0) return;
+    const enabled = mode === 'all';
+    await setUrlCrawlBriefsEnabled(ids, enabled);
+    setEnabledUrlBriefIds(enabled ? new Set(ids) : new Set());
   }, [urlBriefs]);
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(
-        'bannerAds:enabledUrlBriefIds',
-        JSON.stringify(Array.from(enabledUrlBriefIds)),
-      );
-    } catch (e) {
-      console.warn('Persist enabledUrlBriefIds failed', e);
-    }
-  }, [enabledUrlBriefIds]);
+  const handleClearAllUrlBriefs = React.useCallback(async () => {
+    await clearUrlCrawlBriefsCloud();
+    setUrlBriefs([]);
+    setEnabledUrlBriefIds(new Set());
+  }, []);
   // Brand JSON style guide — tách ra state riêng thay vì nhồi vào userPrompt.
   const [brandJsonPrompt, setBrandJsonPrompt] = useState<string>('');
   const [showStyleModal, setShowStyleModal] = useState(false);
@@ -1211,9 +1235,11 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           onChangeEnabledBriefIds={setEnabledBriefIds}
           onDeleteBrief={removeBrandBrief}
           urlBriefs={urlBriefs}
-          onChangeUrlBriefs={setUrlBriefs}
           enabledUrlBriefIds={enabledUrlBriefIds}
-          onChangeEnabledUrlBriefIds={setEnabledUrlBriefIds}
+          onUrlCrawlComplete={handleUrlCrawlComplete}
+          onToggleUrlBrief={handleToggleUrlBrief}
+          onSetAllUrlBriefsEnabled={handleSetAllUrlBriefsEnabled}
+          onClearAllUrlBriefs={handleClearAllUrlBriefs}
           onSaveSnippet={(c) => saveContentSnippet(c)}
           onOpenLibrary={() => { setShowMultiContentModal(false); setShowBrandLibrary(true); }}
           onNavigateToBrandStyle={onNavigate}

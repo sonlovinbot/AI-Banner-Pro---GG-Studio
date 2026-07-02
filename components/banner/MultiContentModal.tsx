@@ -14,6 +14,8 @@ import {
   scrapeUrl, summarizeContent, generateBriefs, RawBrief,
 } from '../../services/contentImportService';
 
+export type UrlCrawlEnable = 'all' | 'none';
+
 const TYPE_ABBR: Partial<Record<BriefType, string>> = {
   'offer-emphasis':       'OFFER',
   'instructor-authority': 'INSTR',
@@ -26,8 +28,6 @@ const TYPE_ABBR: Partial<Record<BriefType, string>> = {
   'aspirational':         'ASPIR',
   'question-hook':        'QUES',
 };
-
-const URL_BRIEF_BRAND_ID = '_url_session';
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -53,11 +53,18 @@ interface Props {
    *  button nếu parent truyền handler. */
   onDeleteBrief?: (briefId: string) => Promise<void>;
 
-  /** URL-crawled briefs (session-scoped, không lưu brand). */
+  /** URL-crawled briefs — persist trong Supabase (user-scoped, không tie brand). */
   urlBriefs: BrandBrief[];
-  onChangeUrlBriefs: (next: BrandBrief[]) => void;
   enabledUrlBriefIds: Set<string>;
-  onChangeEnabledUrlBriefIds: (next: Set<string>) => void;
+  /** Sau khi LLM sinh xong 10 briefs, modal gọi handler này để parent
+   *  persist sang Supabase + update state. Trả về briefs đã persist. */
+  onUrlCrawlComplete: (sourceUrl: string, rawBriefs: RawBrief[]) => Promise<BrandBrief[]>;
+  /** Toggle enabled state cho 1 URL brief (parent persist + update state). */
+  onToggleUrlBrief: (id: string, enabled: boolean) => Promise<void>;
+  /** Bulk enable/disable tất cả URL briefs. */
+  onSetAllUrlBriefsEnabled: (mode: UrlCrawlEnable) => Promise<void>;
+  /** Wipe hết URL briefs (dùng cho Reset). */
+  onClearAllUrlBriefs: () => Promise<void>;
 
   onSaveSnippet?: (content: string) => void;
   onOpenLibrary?: () => void;
@@ -70,7 +77,8 @@ interface Props {
 export const MultiContentModal: React.FC<Props> = ({
   contents, onChangeContents,
   allBriefs, enabledBriefIds, onChangeEnabledBriefIds, onDeleteBrief,
-  urlBriefs, onChangeUrlBriefs, enabledUrlBriefIds, onChangeEnabledUrlBriefIds,
+  urlBriefs, enabledUrlBriefIds,
+  onUrlCrawlComplete, onToggleUrlBrief, onSetAllUrlBriefsEnabled, onClearAllUrlBriefs,
   onSaveSnippet, onOpenLibrary, onNavigateToBrandStyle,
   maxContents = 5,
   onClose,
@@ -103,13 +111,20 @@ export const MultiContentModal: React.FC<Props> = ({
   const enableAllBriefs = () => onChangeEnabledBriefIds(new Set(allBriefs.map(b => b.id)));
   const clearBriefs     = () => onChangeEnabledBriefIds(new Set());
 
-  const toggleUrlBrief = (id: string) => {
-    const next = new Set(enabledUrlBriefIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    onChangeEnabledUrlBriefIds(next);
+  const toggleUrlBrief = async (id: string) => {
+    const nextEnabled = !enabledUrlBriefIds.has(id);
+    try {
+      await onToggleUrlBrief(id, nextEnabled);
+    } catch (e: any) {
+      console.warn('toggleUrlBrief failed', e);
+    }
   };
-  const enableAllUrlBriefs = () => onChangeEnabledUrlBriefIds(new Set(urlBriefs.map(b => b.id)));
-  const clearUrlBriefs     = () => onChangeEnabledUrlBriefIds(new Set());
+  const enableAllUrlBriefs = async () => {
+    try { await onSetAllUrlBriefsEnabled('all'); } catch (e) { console.warn('enableAllUrlBriefs failed', e); }
+  };
+  const clearUrlBriefs = async () => {
+    try { await onSetAllUrlBriefsEnabled('none'); } catch (e) { console.warn('clearUrlBriefs failed', e); }
+  };
 
   const handleCrawl = async () => {
     const trimmed = url.trim();
@@ -132,27 +147,9 @@ export const MultiContentModal: React.FC<Props> = ({
       setCrawlPhase('Đang sinh 10 briefs...');
       const raw = await generateBriefs(summary);
 
-      const now = Date.now();
-      const briefs: BrandBrief[] = raw.map((b: RawBrief, idx: number) => ({
-        id: `url_${now.toString(36)}_${idx}`,
-        brandId: URL_BRIEF_BRAND_ID,
-        briefType: b.brief_type as BriefType,
-        title: b.title || `URL Brief ${idx + 1}`,
-        primaryMessage: b.primary_message || undefined,
-        headline: b.headline || undefined,
-        primaryText: b.primary_text || undefined,
-        cta: b.cta || undefined,
-        toneNotes: b.tone_notes || undefined,
-        sourceUrl: trimmed,
-        isSelected: true, // default all enabled — user unticks
-        position: 100 + idx,
-        createdAt: now,
-        updatedAt: now,
-      }));
+      setCrawlPhase('Đang lưu Supabase...');
+      await onUrlCrawlComplete(trimmed, raw);
 
-      onChangeUrlBriefs(briefs);
-      // Default: enable all — user unticks những cái không muốn
-      onChangeEnabledUrlBriefIds(new Set(briefs.map(b => b.id)));
       setCrawlPhase('');
     } catch (e: any) {
       setCrawlError(e?.message || 'Crawl thất bại');
@@ -162,10 +159,13 @@ export const MultiContentModal: React.FC<Props> = ({
     }
   };
 
-  const clearUrlBriefsAll = () => {
-    onChangeUrlBriefs([]);
-    onChangeEnabledUrlBriefIds(new Set());
-    setUrl('');
+  const clearUrlBriefsAll = async () => {
+    try {
+      await onClearAllUrlBriefs();
+      setUrl('');
+    } catch (e: any) {
+      console.warn('clearUrlBriefsAll failed', e);
+    }
   };
 
   const nonEmptyManual   = contents.filter(c => c.trim()).length;
