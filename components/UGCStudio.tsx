@@ -19,7 +19,7 @@ import {
   getGeminiApiKey, getActiveBackend, setActiveBackend,
   getLibrary,
 } from '../services/storageService';
-import { addHistoryToCloud, listHistoryFromCloud } from '../services/historyService';
+import { addHistoryToCloud, listHistoryFromCloud, removeHistoryFromCloud } from '../services/historyService';
 import { listBrandProjectsFromCloud } from '../services/brandProjectService';
 import {
   listLibraryFromCloud,
@@ -82,6 +82,27 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
     listHistoryFromCloud().then(setHistory).catch(() => {});
   }, []);
   React.useEffect(() => { refreshHistory(); }, [refreshHistory]);
+
+  const deleteHistoryItem = React.useCallback(async (item: HistoryItem) => {
+    try {
+      await removeHistoryFromCloud(item.id);
+      setHistory(prev => prev.filter(h => h.id !== item.id));
+    } catch (e: any) {
+      console.warn('deleteHistoryItem failed', e);
+      alert(`Xoá lỗi: ${e?.message || 'unknown'}`);
+    }
+  }, []);
+
+  const deleteHistorySession = React.useCallback(async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => removeHistoryFromCloud(id).catch(e => {
+        console.warn('deleteHistorySession item failed', id, e);
+      })));
+      setHistory(prev => prev.filter(h => !ids.includes(h.id)));
+    } catch (e: any) {
+      console.warn('deleteHistorySession failed', e);
+    }
+  }, []);
 
   // Reference picker modals (Face / Fashion / Product live in popups now).
   const [showFaceModal, setShowFaceModal] = useState(false);
@@ -564,6 +585,8 @@ export const UGCStudio: React.FC<Props> = ({ onNavigate }) => {
                 featureType="ugc"
                 fullHeight
                 onSelectItem={(it) => setEditingItem(it)}
+                onDeleteItem={deleteHistoryItem}
+                onDeleteSession={deleteHistorySession}
                 onOpenFullHistory={() => onNavigate('history')}
               />
             </div>

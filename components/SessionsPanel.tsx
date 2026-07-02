@@ -11,7 +11,7 @@
 // the existing HistoryEditModal (same flow as the History page).
 
 import React, { useMemo, useState } from 'react';
-import { Clock, LayoutGrid, Rows3, History as HistoryIcon, ChevronDown } from 'lucide-react';
+import { Clock, LayoutGrid, Rows3, History as HistoryIcon, ChevronDown, Trash2 } from 'lucide-react';
 import { HistoryItem, FeatureType } from '../types';
 import { bucketIntoSessions } from '../services/historyService';
 import { proxiedBannerUrl } from '../services/cdnProxy';
@@ -25,6 +25,11 @@ interface Props {
   featureType: FeatureType;
   /** Click a banner to open the edit modal (parent already owns that state). */
   onSelectItem: (item: HistoryItem) => void;
+
+  /** Delete one banner. Parent chịu trách nhiệm confirm + refresh history. */
+  onDeleteItem?: (item: HistoryItem) => void;
+  /** Delete an entire session (all banners in the group). */
+  onDeleteSession?: (itemIds: string[]) => void;
 
   /** Optional: navigate to the full HistoryPage. */
   onOpenFullHistory?: () => void;
@@ -41,7 +46,7 @@ interface Props {
 const DEFAULT_MAX = 12;
 
 export const SessionsPanel: React.FC<Props> = ({
-  history, featureType, onSelectItem, onOpenFullHistory,
+  history, featureType, onSelectItem, onDeleteItem, onDeleteSession, onOpenFullHistory,
   maxSessions = DEFAULT_MAX,
   fullHeight = false,
 }) => {
@@ -116,6 +121,8 @@ export const SessionsPanel: React.FC<Props> = ({
               key={s.key}
               session={s}
               onSelectItem={onSelectItem}
+              onDeleteItem={onDeleteItem}
+              onDeleteSession={onDeleteSession}
               expanded={isExpanded}
               onToggleExpand={() => toggleExpand(s.key)}
               fullHeight={fullHeight}
@@ -125,6 +132,8 @@ export const SessionsPanel: React.FC<Props> = ({
               key={s.key}
               session={s}
               onSelectItem={onSelectItem}
+              onDeleteItem={onDeleteItem}
+              onDeleteSession={onDeleteSession}
               fullHeight={fullHeight}
             />
           );
@@ -139,39 +148,65 @@ export const SessionsPanel: React.FC<Props> = ({
 interface SessionRowProps {
   session: ReturnType<typeof bucketIntoSessions>[number];
   onSelectItem: (item: HistoryItem) => void;
+  onDeleteItem?: (item: HistoryItem) => void;
+  onDeleteSession?: (itemIds: string[]) => void;
   expanded: boolean;
   onToggleExpand: () => void;
   fullHeight?: boolean;
 }
 
-const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded, onToggleExpand, fullHeight }) => {
+const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, onDeleteItem, onDeleteSession, expanded, onToggleExpand, fullHeight }) => {
   const capBig = fullHeight ? 14 : 8;
   const shown = expanded ? session.items : session.items.slice(0, capBig);
   const overflow = session.items.length - shown.length;
   const thumbSize = fullHeight ? 72 : 44;
 
+  const handleDeleteSession = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onDeleteSession) return;
+    if (!confirm(`Xoá cả phiên (${session.items.length} banner)? Không undo được.`)) return;
+    onDeleteSession(session.items.map(i => i.id));
+  };
+
   return (
     <div className="rounded-md border border-line bg-canvas hover:border-brand/40 transition-colors">
-      <button
-        onClick={onToggleExpand}
-        className="w-full flex items-center gap-3 px-3 py-2 text-left"
-      >
-        <ChevronDown size={13} className={`text-muted shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`} />
-        <Clock size={11} className="text-subtle shrink-0" />
-        <span className="text-[11px] text-fg font-medium shrink-0">
-          {relativeTime(session.startedAt)}
-        </span>
-        <span className="text-[11px] text-subtle shrink-0 font-mono">
-          {session.items.length} banner
-        </span>
-        <div className="ml-auto shrink-0 flex items-center gap-1">
+      <div className="w-full flex items-center gap-3 px-3 py-2">
+        <button
+          onClick={onToggleExpand}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left"
+        >
+          <ChevronDown size={13} className={`text-muted shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+          <Clock size={11} className="text-subtle shrink-0" />
+          <span className="text-[11px] text-fg font-medium shrink-0">
+            {relativeTime(session.startedAt)}
+          </span>
+          <span className="text-[11px] text-subtle shrink-0 font-mono">
+            {session.items.length} banner
+          </span>
+        </button>
+        <div className="shrink-0 flex items-center gap-1">
           <ConfigChips item={session.items[0]} />
+          {onDeleteSession && (
+            <button
+              onClick={handleDeleteSession}
+              className="p-1 rounded text-muted hover:text-danger hover:bg-danger-soft"
+              title="Xoá cả phiên"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
         </div>
-      </button>
+      </div>
 
       <div className="px-3 pb-2 flex items-center gap-1.5 overflow-x-auto">
         {shown.map(it => (
-          <Thumb key={it.id} item={it} size={thumbSize} onClick={() => onSelectItem(it)} />
+          <Thumb
+            key={it.id}
+            item={it}
+            size={thumbSize}
+            onClick={() => onSelectItem(it)}
+            onDelete={onDeleteItem ? () => onDeleteItem(it) : undefined}
+          />
         ))}
         {overflow > 0 && (
           <button
@@ -192,11 +227,20 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, onSelectItem, expanded
 const SessionGrid: React.FC<{
   session: ReturnType<typeof bucketIntoSessions>[number];
   onSelectItem: (item: HistoryItem) => void;
+  onDeleteItem?: (item: HistoryItem) => void;
+  onDeleteSession?: (itemIds: string[]) => void;
   fullHeight?: boolean;
-}> = ({ session, onSelectItem, fullHeight }) => {
+}> = ({ session, onSelectItem, onDeleteItem, onDeleteSession, fullHeight }) => {
   const gridCols = fullHeight
     ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'
     : 'grid-cols-4 sm:grid-cols-6 md:grid-cols-8';
+
+  const handleDeleteSession = () => {
+    if (!onDeleteSession) return;
+    if (!confirm(`Xoá cả phiên (${session.items.length} banner)? Không undo được.`)) return;
+    onDeleteSession(session.items.map(i => i.id));
+  };
+
   return (
     <div className="rounded-md border border-line bg-canvas p-3 space-y-2">
       <div className="flex items-center gap-2 text-[11px]">
@@ -205,11 +249,26 @@ const SessionGrid: React.FC<{
         <span className="text-subtle font-mono">{session.items.length} banner</span>
         <div className="ml-auto shrink-0 flex items-center gap-1">
           <ConfigChips item={session.items[0]} />
+          {onDeleteSession && (
+            <button
+              onClick={handleDeleteSession}
+              className="p-1 rounded text-muted hover:text-danger hover:bg-danger-soft"
+              title="Xoá cả phiên"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
         </div>
       </div>
       <div className={`grid ${gridCols} gap-2`}>
         {session.items.map(it => (
-          <Thumb key={it.id} item={it} size={0} onClick={() => onSelectItem(it)} />
+          <Thumb
+            key={it.id}
+            item={it}
+            size={0}
+            onClick={() => onSelectItem(it)}
+            onDelete={onDeleteItem ? () => onDeleteItem(it) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -221,31 +280,53 @@ const SessionGrid: React.FC<{
 const Thumb: React.FC<{
   item: HistoryItem;
   onClick: () => void;
+  onDelete?: () => void;
   /** Fixed pixel size for row mode; 0 = grid mode with aspect-square */
   size: number;
-}> = ({ item, onClick, size }) => {
+}> = ({ item, onClick, onDelete, size }) => {
   const style = size > 0 ? { width: size, height: size } : undefined;
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onDelete) return;
+    if (!confirm('Xoá banner này?')) return;
+    onDelete();
+  };
+
   return (
-    <button
-      onClick={onClick}
+    <div
       style={style}
       className={`group relative overflow-hidden rounded border border-line hover:border-brand hover:ring-2 hover:ring-brand/30 transition-all shrink-0 ${
         size === 0 ? 'aspect-square w-full' : ''
       }`}
-      title={item.promptUsed || 'Mở để sửa'}
+      title={item.promptUsed || 'Click để mở edit'}
     >
-      <img
-        src={proxiedBannerUrl(item.imageUrl)}
-        alt=""
-        className="w-full h-full object-cover"
-        loading="lazy"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
+      <button
+        onClick={onClick}
+        className="absolute inset-0 w-full h-full"
+      >
+        <img
+          src={proxiedBannerUrl(item.imageUrl)}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      </button>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex items-end p-1">
         <span className="text-[8px] text-white font-mono truncate w-full">
           {item.aspectRatio} · {item.quality}
         </span>
       </div>
-    </button>
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="absolute top-0.5 right-0.5 p-1 rounded bg-black/50 text-white/80 hover:bg-danger hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Xoá banner này"
+        >
+          <Trash2 size={10} />
+        </button>
+      )}
+    </div>
   );
 };
 

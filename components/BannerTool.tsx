@@ -27,7 +27,7 @@ import {
   setActiveBackend,
   getLibrary,
 } from '../services/storageService';
-import { addHistoryToCloud, listHistoryFromCloud } from '../services/historyService';
+import { addHistoryToCloud, listHistoryFromCloud, removeHistoryFromCloud } from '../services/historyService';
 import {
   listVotesFromCloud,
   addVoteToCloud,
@@ -150,6 +150,12 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   // per-brief which to use as content variants in the gen plan.
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
+  // URL Crawl briefs — session-scoped (không lưu brand). Sinh trong
+  // MultiContentModal khi user paste URL + click Crawl.
+  const [urlBriefs, setUrlBriefs] = useState<BrandBrief[]>([]);
+  const [enabledUrlBriefIds, setEnabledUrlBriefIds] = useState<Set<string>>(new Set());
+  // Brand JSON style guide — tách ra state riêng thay vì nhồi vào userPrompt.
+  const [brandJsonPrompt, setBrandJsonPrompt] = useState<string>('');
   const [showStyleModal, setShowStyleModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
@@ -226,6 +232,27 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   const [editingItem, setEditingItem] = useState<HistoryItem | null>(null);
   const refreshHistory = React.useCallback(() => {
     listHistoryFromCloud().then(setHistory).catch(() => {});
+  }, []);
+
+  const deleteHistoryItem = React.useCallback(async (item: HistoryItem) => {
+    try {
+      await removeHistoryFromCloud(item.id);
+      setHistory(prev => prev.filter(h => h.id !== item.id));
+    } catch (e: any) {
+      console.warn('deleteHistoryItem failed', e);
+      alert(`Xoá lỗi: ${e?.message || 'unknown'}`);
+    }
+  }, []);
+
+  const deleteHistorySession = React.useCallback(async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => removeHistoryFromCloud(id).catch(e => {
+        console.warn('deleteHistorySession item failed', id, e);
+      })));
+      setHistory(prev => prev.filter(h => !ids.includes(h.id)));
+    } catch (e: any) {
+      console.warn('deleteHistorySession failed', e);
+    }
   }, []);
 
   // Initial cloud loads
@@ -468,15 +495,20 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     const composedBrand = [project.brandInfo, project.eventInfo].filter(s => s.trim()).join('\n');
     if (composedBrand) setBrandContent(composedBrand);
 
+    // Brand JSON prompt lưu vào state riêng brandJsonPrompt — không nhét
+    // vào userPrompt textarea nữa (đỡ noise). Gen sẽ nhét vào BRAND STYLE
+    // section của combinedPrompt.
     if (project.jsonPrompt.trim()) {
-      const jsonLine = `Brand reference (JSON): ${project.jsonPrompt.trim()}`;
-      setUserPrompt(prev => prev.trim() ? `${prev}\n${jsonLine}` : jsonLine);
+      setBrandJsonPrompt(project.jsonPrompt.trim());
     }
 
     setActiveBrandId(project.id);
   };
 
-  const clearBrandSelection = () => setActiveBrandId('');
+  const clearBrandSelection = () => {
+    setActiveBrandId('');
+    setBrandJsonPrompt('');
+  };
 
   const handleRemove = (id: string, type: 'ref' | 'prod') => {
     if (type === 'ref') {
@@ -586,44 +618,54 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     setIsGenerating(true);
     setGenerationProgress({});
 
-    // Build the list of contents to render.
-    // Multi mode merges two sources: manually typed contents[] + enabled
-    // brand briefs (auto-loaded from selected briefs). Each brief contributes
-    // its primary_text (or headline fallback) as one content variant.
+    // Build the list of content sources — mỗi source có text (nội dung
+    // banner) và optional brief (context bổ sung cho AI). Multi mode gộp
+    // 3 nguồn: manual + brand briefs + URL crawl briefs. Single mode chỉ
+    // dùng brandContent.
+    type ContentSource = { text: string; brief?: BrandBrief };
     const enabledBriefs = brandBriefs.filter(b => enabledBriefIds.has(b.id));
-    const briefContents = enabledBriefs
-      .map(b => (b.primaryText || b.primaryMessage || b.headline || '').trim())
-      .filter(Boolean);
-    const contentsPlan: string[] = multiContent
-      ? [...contents.map(c => c.trim()).filter(Boolean), ...briefContents]
-      : [brandContent.trim()];
+    const enabledUrlBrief = urlBriefs.filter(b => enabledUrlBriefIds.has(b.id));
+    const briefSources: ContentSource[] = [...enabledBriefs, ...enabledUrlBrief]
+      .map(b => ({
+        text: (b.primaryText || b.primaryMessage || b.headline || '').trim(),
+        brief: b,
+      }))
+      .filter(s => s.text);
+    const manualSources: ContentSource[] = contents
+      .map(c => ({ text: c.trim() }))
+      .filter(s => s.text);
+
+    const contentSources: ContentSource[] = multiContent
+      ? [...manualSources, ...briefSources]
+      : [{ text: brandContent.trim() }];
 
     // Multi mode requires at least one non-empty content
-    if (multiContent && contentsPlan.length === 0) {
+    if (multiContent && contentSources.length === 0) {
       setErrorMsg("Multi-content mode is on — vui lòng nhập ít nhất một nội dung.");
       setIsGenerating(false);
       return;
     }
 
     // Single mode: still ok if empty (matches prior behavior of allowing empty brand content)
-    if (!multiContent && contentsPlan.length === 0) {
-      contentsPlan.push("");
+    if (!multiContent && contentSources.length === 0) {
+      contentSources.push({ text: "" });
     }
 
-    // Persist non-empty contents into brand library (cloud) — fire and forget
-    for (const c of contentsPlan) {
-      if (c) {
-        addSnippetToCloud(c)
-          .then(snippet => setBrandLibrary(prev => [snippet, ...prev.filter(s => s.content !== c)]))
+    // Persist non-empty MANUAL contents into brand library (cloud) —
+    // briefs không nhét lại vì đã có trong brand.
+    for (const s of contentSources) {
+      if (s.text && !s.brief) {
+        addSnippetToCloud(s.text)
+          .then(snippet => setBrandLibrary(prev => [snippet, ...prev.filter(sn => sn.content !== s.text)]))
           .catch(e => console.warn('addSnippetToCloud (bulk) failed', e));
       }
     }
 
     const perContent = multiContent ? versionsPerContent : variantCount;
 
-    type Plan = { placeholder: GeneratedBanner; content: string };
+    type Plan = { placeholder: GeneratedBanner; source: ContentSource };
     const plan: Plan[] = [];
-    for (const content of contentsPlan) {
+    for (const source of contentSources) {
       for (let i = 0; i < perContent; i++) {
         plan.push({
           placeholder: {
@@ -633,7 +675,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             status: 'loading',
             timestamp: Date.now(),
           },
-          content,
+          source,
         });
       }
     }
@@ -646,7 +688,7 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
     // per-banner timestamps drift due to async completion order.
     const sessionId = `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const promises = plan.map(async ({ placeholder, content }) => {
+    const promises = plan.map(async ({ placeholder, source }) => {
       // Either pool can be empty; fall back to the other so user can run
       // with style-only or product-only inputs.
       const refPool = refImages.length > 0 ? refImages : prodImages;
@@ -662,11 +704,31 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
         "Ensure a balanced, professional composition."
       ];
       const randomNuance = getRandomItem(varietyPrompts);
-      const combinedPrompt = [userPrompt, randomNuance, typePrompt].filter(Boolean).join('\n');
+
+      // Structured user-side prompt — sections rõ ràng, model dễ parse hơn
+      // string join lộn xộn. Order: BRAND STYLE → BRIEF → TYPE → USER
+      // ADJUSTMENTS → STYLE VARIETY.
+      const sections: string[] = [];
+      if (brandJsonPrompt.trim()) {
+        sections.push(`BRAND STYLE (JSON):\n${brandJsonPrompt.trim()}`);
+      }
+      if (source.brief) {
+        const b = source.brief;
+        const briefLines: string[] = [`Type: ${b.briefType}`];
+        if (b.headline)   briefLines.push(`Headline: "${b.headline}"`);
+        if (b.cta)        briefLines.push(`CTA: ${b.cta}`);
+        if (b.toneNotes)  briefLines.push(`Tone: ${b.toneNotes}`);
+        sections.push(`BRIEF CONTEXT:\n${briefLines.join('\n')}`);
+      }
+      if (typePrompt) sections.push(typePrompt);
+      if (userPrompt.trim()) sections.push(`USER ADJUSTMENTS:\n${userPrompt.trim()}`);
+      sections.push(`STYLE VARIETY: ${randomNuance}`);
+
+      const combinedPrompt = sections.join('\n\n');
 
       try {
         const { imageUrl, duration } = await generateSingle(
-          placeholder, selectedRef, selectedProd, combinedPrompt, content,
+          placeholder, selectedRef, selectedProd, combinedPrompt, source.text,
           [], sessionId,
         );
 
@@ -857,8 +919,9 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
             {(() => {
               const nonEmptyContents = contents.filter(c => c.trim()).length;
               const enabledBriefCount = enabledBriefIds.size;
+              const enabledUrlBriefCount = enabledUrlBriefIds.size;
               const totalVariants = multiContent
-                ? nonEmptyContents + enabledBriefCount
+                ? nonEmptyContents + enabledBriefCount + enabledUrlBriefCount
                 : 0;
               // At least 1 content is always sent (falls back to empty in
               // single-mode). Used for total banner preview math.
@@ -1008,6 +1071,8 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
                 featureType="banner"
                 fullHeight
                 onSelectItem={(it) => setEditingItem(it)}
+                onDeleteItem={deleteHistoryItem}
+                onDeleteSession={deleteHistorySession}
                 onOpenFullHistory={() => onNavigate('history')}
               />
             </div>
@@ -1091,6 +1156,10 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
           allBriefs={brandBriefs}
           enabledBriefIds={enabledBriefIds}
           onChangeEnabledBriefIds={setEnabledBriefIds}
+          urlBriefs={urlBriefs}
+          onChangeUrlBriefs={setUrlBriefs}
+          enabledUrlBriefIds={enabledUrlBriefIds}
+          onChangeEnabledUrlBriefIds={setEnabledUrlBriefIds}
           onSaveSnippet={(c) => saveContentSnippet(c)}
           onOpenLibrary={() => { setShowMultiContentModal(false); setShowBrandLibrary(true); }}
           onNavigateToBrandStyle={onNavigate}

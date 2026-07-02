@@ -1,15 +1,18 @@
-// Content variants manager — one scroll, two stacked sections:
+// Content variants manager — one scroll, three stacked sections:
 //   1. Manual biến thể (textareas, index 0 mirrors sidebar primary)
 //   2. Brand briefs (compact ticklist beneath manual)
-//
-// Old design had tabs which added a click; both sources feed the same
-// output count so they belong on one page.
+//   3. URL Crawl briefs (session-scoped: paste URL → Firecrawl → 10 briefs
+//      → tick chọn; không lưu vào brand)
 
 import React, { useState } from 'react';
 import {
   X, Plus, ListPlus, Save, Trash2, FolderOpen, Sparkles, CheckCircle,
+  Link as LinkIcon, Loader2, AlertCircle,
 } from 'lucide-react';
 import { BrandBrief, BriefType, AppPage } from '../../types';
+import {
+  scrapeUrl, summarizeContent, generateBriefs, RawBrief,
+} from '../../services/contentImportService';
 
 const TYPE_ABBR: Partial<Record<BriefType, string>> = {
   'offer-emphasis':       'OFFER',
@@ -24,6 +27,8 @@ const TYPE_ABBR: Partial<Record<BriefType, string>> = {
   'question-hook':        'QUES',
 };
 
+const URL_BRIEF_BRAND_ID = '_url_session';
+
 interface Props {
   contents: string[];
   onChangeContents: (next: string[]) => void;
@@ -31,6 +36,12 @@ interface Props {
   allBriefs: BrandBrief[];
   enabledBriefIds: Set<string>;
   onChangeEnabledBriefIds: (next: Set<string>) => void;
+
+  /** URL-crawled briefs (session-scoped, không lưu brand). */
+  urlBriefs: BrandBrief[];
+  onChangeUrlBriefs: (next: BrandBrief[]) => void;
+  enabledUrlBriefIds: Set<string>;
+  onChangeEnabledUrlBriefIds: (next: Set<string>) => void;
 
   onSaveSnippet?: (content: string) => void;
   onOpenLibrary?: () => void;
@@ -43,11 +54,18 @@ interface Props {
 export const MultiContentModal: React.FC<Props> = ({
   contents, onChangeContents,
   allBriefs, enabledBriefIds, onChangeEnabledBriefIds,
+  urlBriefs, onChangeUrlBriefs, enabledUrlBriefIds, onChangeEnabledUrlBriefIds,
   onSaveSnippet, onOpenLibrary, onNavigateToBrandStyle,
   maxContents = 5,
   onClose,
 }) => {
   const [focused, setFocused] = useState<number | null>(null);
+
+  // URL crawl state — local to modal.
+  const [url, setUrl] = useState('');
+  const [crawling, setCrawling] = useState(false);
+  const [crawlPhase, setCrawlPhase] = useState<string>('');
+  const [crawlError, setCrawlError] = useState<string | null>(null);
 
   const setContent = (idx: number, v: string) => {
     onChangeContents(contents.map((c, i) => (i === idx ? v : c)));
@@ -69,9 +87,75 @@ export const MultiContentModal: React.FC<Props> = ({
   const enableAllBriefs = () => onChangeEnabledBriefIds(new Set(allBriefs.map(b => b.id)));
   const clearBriefs     = () => onChangeEnabledBriefIds(new Set());
 
-  const nonEmptyManual = contents.filter(c => c.trim()).length;
-  const enabledCount   = enabledBriefIds.size;
-  const totalVariants  = nonEmptyManual + enabledCount;
+  const toggleUrlBrief = (id: string) => {
+    const next = new Set(enabledUrlBriefIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onChangeEnabledUrlBriefIds(next);
+  };
+  const enableAllUrlBriefs = () => onChangeEnabledUrlBriefIds(new Set(urlBriefs.map(b => b.id)));
+  const clearUrlBriefs     = () => onChangeEnabledUrlBriefIds(new Set());
+
+  const handleCrawl = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setCrawlError('URL phải bắt đầu bằng http:// hoặc https://');
+      return;
+    }
+
+    setCrawlError(null);
+    setCrawling(true);
+
+    try {
+      setCrawlPhase('Đang crawl URL...');
+      const scrape = await scrapeUrl(trimmed);
+
+      setCrawlPhase('Đang tóm tắt brand/USP...');
+      const summary = await summarizeContent(scrape.markdown);
+
+      setCrawlPhase('Đang sinh 10 briefs...');
+      const raw = await generateBriefs(summary);
+
+      const now = Date.now();
+      const briefs: BrandBrief[] = raw.map((b: RawBrief, idx: number) => ({
+        id: `url_${now.toString(36)}_${idx}`,
+        brandId: URL_BRIEF_BRAND_ID,
+        briefType: b.brief_type as BriefType,
+        title: b.title || `URL Brief ${idx + 1}`,
+        primaryMessage: b.primary_message || undefined,
+        headline: b.headline || undefined,
+        primaryText: b.primary_text || undefined,
+        cta: b.cta || undefined,
+        toneNotes: b.tone_notes || undefined,
+        sourceUrl: trimmed,
+        isSelected: true, // default all enabled — user unticks
+        position: 100 + idx,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      onChangeUrlBriefs(briefs);
+      // Default: enable all — user unticks những cái không muốn
+      onChangeEnabledUrlBriefIds(new Set(briefs.map(b => b.id)));
+      setCrawlPhase('');
+    } catch (e: any) {
+      setCrawlError(e?.message || 'Crawl thất bại');
+      setCrawlPhase('');
+    } finally {
+      setCrawling(false);
+    }
+  };
+
+  const clearUrlBriefsAll = () => {
+    onChangeUrlBriefs([]);
+    onChangeEnabledUrlBriefIds(new Set());
+    setUrl('');
+  };
+
+  const nonEmptyManual   = contents.filter(c => c.trim()).length;
+  const enabledBriefCnt  = enabledBriefIds.size;
+  const enabledUrlCnt    = enabledUrlBriefIds.size;
+  const totalVariants    = nonEmptyManual + enabledBriefCnt + enabledUrlCnt;
 
   return (
     <div
@@ -90,7 +174,7 @@ export const MultiContentModal: React.FC<Props> = ({
             <div>
               <h3 className="text-sm font-semibold text-fg">Biến thể nội dung</h3>
               <p className="text-[11px] text-subtle">
-                Mỗi biến thể = 1 nội dung khác nhau. Số bản/biến thể ở panel Đầu ra.
+                Manual + brand briefs + URL crawl briefs. Số bản/biến thể ở panel Đầu ra.
               </p>
             </div>
           </div>
@@ -102,7 +186,7 @@ export const MultiContentModal: React.FC<Props> = ({
         <div className="px-5 py-3 border-b border-line bg-canvas/50 flex items-center justify-between">
           <span className="text-xs text-fg font-medium">
             Tổng <span className="text-brand">{totalVariants}</span> biến thể ·{' '}
-            <span className="text-muted">{nonEmptyManual} tay + {enabledCount} brief</span>
+            <span className="text-muted">{nonEmptyManual} tay + {enabledBriefCnt} brief + {enabledUrlCnt} URL</span>
           </span>
           {onOpenLibrary && (
             <button
@@ -176,18 +260,18 @@ export const MultiContentModal: React.FC<Props> = ({
             </button>
           </section>
 
-          {/* ─── Brand briefs (compact, below manual) ─── */}
+          {/* ─── Brand briefs (compact) ─── */}
           <section className="space-y-2 border-t border-line pt-4">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles size={11} className="text-brand" />
-                Brand briefs ({enabledCount}/{allBriefs.length})
+                Brand briefs ({enabledBriefCnt}/{allBriefs.length})
               </p>
               {allBriefs.length > 0 && (
                 <div className="flex items-center gap-2 text-[10px]">
                   <button
                     onClick={enableAllBriefs}
-                    disabled={enabledCount === allBriefs.length}
+                    disabled={enabledBriefCnt === allBriefs.length}
                     className="text-brand hover:underline disabled:opacity-40 disabled:no-underline"
                   >
                     Tất cả
@@ -195,7 +279,7 @@ export const MultiContentModal: React.FC<Props> = ({
                   <span className="text-subtle">·</span>
                   <button
                     onClick={clearBriefs}
-                    disabled={enabledCount === 0}
+                    disabled={enabledBriefCnt === 0}
                     className="text-muted hover:text-fg hover:underline disabled:opacity-40 disabled:no-underline"
                   >
                     Bỏ hết
@@ -218,41 +302,109 @@ export const MultiContentModal: React.FC<Props> = ({
 
             {allBriefs.length === 0 ? (
               <div className="text-center py-4 text-[11px] text-subtle italic border border-dashed border-line rounded-md">
-                Brand này chưa có brief. Vào <b>Brand Style</b> → Import từ URL để tạo 10 briefs.
+                Brand này chưa có brief. Dùng URL Crawl bên dưới hoặc tạo trong Brand Style.
               </div>
             ) : (
               <div className="space-y-1">
-                {allBriefs.map(b => {
-                  const on = enabledBriefIds.has(b.id);
-                  return (
-                    <button
-                      key={b.id}
-                      onClick={() => toggleBrief(b.id)}
-                      className={`w-full text-left rounded-md border p-2 transition-colors flex items-start gap-2 ${
-                        on ? 'bg-brand/10 border-brand/40' : 'bg-canvas border-line hover:bg-raised'
-                      }`}
-                    >
-                      <span className={`shrink-0 mt-0.5 w-4 h-4 rounded flex items-center justify-center ${
-                        on ? 'bg-brand text-white' : 'border border-line bg-surface'
-                      }`}>
-                        {on && <CheckCircle size={11} />}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-[12px] font-medium text-fg leading-tight truncate">{b.title}</p>
-                          <span className="text-[9px] font-mono uppercase text-subtle bg-raised border border-line px-1 py-px rounded shrink-0">
-                            {TYPE_ABBR[b.briefType] || b.briefType}
-                          </span>
-                        </div>
-                        {b.headline && (
-                          <p className="text-[11px] text-fg/70 leading-snug line-clamp-1 mt-0.5">
-                            <span className="text-subtle font-mono mr-1">H:</span>{b.headline}
-                          </p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+                {allBriefs.map(b => (
+                  <BriefCard
+                    key={b.id}
+                    brief={b}
+                    on={enabledBriefIds.has(b.id)}
+                    onToggle={() => toggleBrief(b.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* ─── URL Crawl briefs (NEW, session-scoped) ─── */}
+          <section className="space-y-2 border-t border-line pt-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
+                <LinkIcon size={11} className="text-info" />
+                URL Crawl briefs ({enabledUrlCnt}/{urlBriefs.length})
+                <span className="text-[9px] font-normal text-subtle italic">chỉ trong phiên này</span>
+              </p>
+              {urlBriefs.length > 0 && (
+                <div className="flex items-center gap-2 text-[10px]">
+                  <button
+                    onClick={enableAllUrlBriefs}
+                    disabled={enabledUrlCnt === urlBriefs.length}
+                    className="text-brand hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    Tất cả
+                  </button>
+                  <span className="text-subtle">·</span>
+                  <button
+                    onClick={clearUrlBriefs}
+                    disabled={enabledUrlCnt === 0}
+                    className="text-muted hover:text-fg hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    Bỏ hết
+                  </button>
+                  <span className="text-subtle">·</span>
+                  <button
+                    onClick={clearUrlBriefsAll}
+                    className="text-muted hover:text-danger hover:underline"
+                    title="Xoá tất cả URL briefs + input"
+                  >
+                    Reset
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* URL input + Crawl button */}
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => { setUrl(e.target.value); setCrawlError(null); }}
+                placeholder="https://landing-page.com/promo"
+                disabled={crawling}
+                className="flex-1 text-xs bg-canvas border border-line rounded-md px-3 py-2 text-fg focus:outline-none focus:border-brand disabled:opacity-50"
+              />
+              <button
+                onClick={handleCrawl}
+                disabled={crawling || !url.trim()}
+                className="text-xs px-3 py-2 rounded-md bg-brand hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium flex items-center gap-1.5"
+              >
+                {crawling ? <Loader2 size={12} className="animate-spin" /> : <LinkIcon size={12} />}
+                {crawling ? 'Crawling...' : 'Crawl'}
+              </button>
+            </div>
+
+            {crawlPhase && (
+              <div className="text-[11px] text-brand bg-brand/5 border border-brand/20 rounded px-2 py-1.5 flex items-center gap-1.5">
+                <Loader2 size={11} className="animate-spin" /> {crawlPhase}
+              </div>
+            )}
+
+            {crawlError && (
+              <div className="text-[11px] text-danger bg-danger-soft border border-danger-fg/30 rounded px-2 py-1.5 flex items-start gap-1.5">
+                <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                <span className="whitespace-pre-wrap">{crawlError}</span>
+              </div>
+            )}
+
+            {urlBriefs.length === 0 && !crawling && !crawlError && (
+              <p className="text-[11px] text-subtle italic">
+                Paste URL landing page → hệ thống scrape + AI sinh 10 briefs tick chọn cho gen này.
+              </p>
+            )}
+
+            {urlBriefs.length > 0 && (
+              <div className="space-y-1">
+                {urlBriefs.map(b => (
+                  <BriefCard
+                    key={b.id}
+                    brief={b}
+                    on={enabledUrlBriefIds.has(b.id)}
+                    onToggle={() => toggleUrlBrief(b.id)}
+                    accent="info"
+                  />
+                ))}
               </div>
             )}
           </section>
@@ -269,5 +421,44 @@ export const MultiContentModal: React.FC<Props> = ({
         </footer>
       </div>
     </div>
+  );
+};
+
+// ─── Shared brief card ───
+
+const BriefCard: React.FC<{
+  brief: BrandBrief;
+  on: boolean;
+  onToggle: () => void;
+  accent?: 'brand' | 'info';
+}> = ({ brief: b, on, onToggle, accent = 'brand' }) => {
+  const activeBg   = accent === 'info' ? 'bg-info-soft border-info' : 'bg-brand/10 border-brand/40';
+  const activeIcon = accent === 'info' ? 'bg-info text-white' : 'bg-brand text-white';
+  return (
+    <button
+      onClick={onToggle}
+      className={`w-full text-left rounded-md border p-2 transition-colors flex items-start gap-2 ${
+        on ? activeBg : 'bg-canvas border-line hover:bg-raised'
+      }`}
+    >
+      <span className={`shrink-0 mt-0.5 w-4 h-4 rounded flex items-center justify-center ${
+        on ? activeIcon : 'border border-line bg-surface'
+      }`}>
+        {on && <CheckCircle size={11} />}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[12px] font-medium text-fg leading-tight truncate">{b.title}</p>
+          <span className="text-[9px] font-mono uppercase text-subtle bg-raised border border-line px-1 py-px rounded shrink-0">
+            {TYPE_ABBR[b.briefType] || b.briefType}
+          </span>
+        </div>
+        {b.headline && (
+          <p className="text-[11px] text-fg/70 leading-snug line-clamp-1 mt-0.5">
+            <span className="text-subtle font-mono mr-1">H:</span>{b.headline}
+          </p>
+        )}
+      </div>
+    </button>
   );
 };
