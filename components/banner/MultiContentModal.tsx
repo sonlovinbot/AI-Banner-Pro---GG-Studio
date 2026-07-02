@@ -29,6 +29,19 @@ const TYPE_ABBR: Partial<Record<BriefType, string>> = {
 
 const URL_BRIEF_BRAND_ID = '_url_session';
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'vừa xong';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} phút trước`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} giờ trước`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d} ngày trước`;
+  return new Date(ts).toLocaleDateString('vi-VN');
+}
+
 interface Props {
   contents: string[];
   onChangeContents: (next: string[]) => void;
@@ -264,13 +277,14 @@ export const MultiContentModal: React.FC<Props> = ({
           </section>
 
           {/* ─── URL Crawl briefs (đặt TRÊN Brand briefs — tick vào là hiện
-                phía trên khu vực brand briefs) ─── */}
+                phía trên khu vực brand briefs). Persist trong localStorage
+                nên nguồn URL vẫn còn sau reload. ─── */}
           <section className="space-y-2 border-t border-line pt-4">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold text-subtle uppercase tracking-wider flex items-center gap-1.5">
                 <LinkIcon size={11} className="text-info" />
                 URL Crawl briefs ({enabledUrlCnt}/{urlBriefs.length})
-                <span className="text-[9px] font-normal text-subtle italic">chỉ trong phiên này</span>
+                <span className="text-[9px] font-normal text-subtle italic">đã lưu localStorage</span>
               </p>
               {urlBriefs.length > 0 && (
                 <div className="flex items-center gap-2 text-[10px]">
@@ -336,22 +350,51 @@ export const MultiContentModal: React.FC<Props> = ({
 
             {urlBriefs.length === 0 && !crawling && !crawlError && (
               <p className="text-[11px] text-subtle italic">
-                Paste URL landing page → hệ thống scrape + AI sinh 10 briefs tick chọn cho gen này.
+                Paste URL landing page → hệ thống scrape + AI sinh 10 briefs tick chọn cho gen này. Lưu tự động localStorage.
               </p>
             )}
 
             {urlBriefs.length > 0 && (
-              <div className="space-y-1">
-                {urlBriefs.map(b => (
-                  <BriefCard
-                    key={b.id}
-                    brief={b}
-                    on={enabledUrlBriefIds.has(b.id)}
-                    onToggle={() => toggleUrlBrief(b.id)}
-                    accent="info"
-                  />
-                ))}
-              </div>
+              <>
+                {(() => {
+                  // Nguồn URL: lấy từ brief đầu tiên (tất cả cùng 1 crawl).
+                  const src = urlBriefs[0]?.sourceUrl;
+                  const crawledAt = urlBriefs[0]?.createdAt;
+                  if (!src) return null;
+                  let hostname = src;
+                  try { hostname = new URL(src).hostname; } catch {}
+                  const rel = crawledAt ? relativeTime(crawledAt) : '';
+                  return (
+                    <div className="flex items-center gap-2 text-[10px] text-muted bg-info-soft border border-info-fg/30 rounded px-2 py-1">
+                      <LinkIcon size={9} className="text-info shrink-0" />
+                      <span className="truncate flex-1 min-w-0">
+                        <b>Nguồn:</b> {hostname}
+                        {rel && <span className="text-subtle ml-1.5">· {rel}</span>}
+                      </span>
+                      <a
+                        href={src}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-info hover:underline"
+                        title={src}
+                      >
+                        mở →
+                      </a>
+                    </div>
+                  );
+                })()}
+                <div className="space-y-1">
+                  {urlBriefs.map(b => (
+                    <BriefCard
+                      key={b.id}
+                      brief={b}
+                      on={enabledUrlBriefIds.has(b.id)}
+                      onToggle={() => toggleUrlBrief(b.id)}
+                      accent="info"
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </section>
 

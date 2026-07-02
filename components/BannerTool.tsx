@@ -150,10 +150,39 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
   // per-brief which to use as content variants in the gen plan.
   const [brandBriefs, setBrandBriefs] = useState<BrandBrief[]>([]);
   const [enabledBriefIds, setEnabledBriefIds] = useState<Set<string>>(new Set());
-  // URL Crawl briefs — session-scoped (không lưu brand). Sinh trong
-  // MultiContentModal khi user paste URL + click Crawl.
-  const [urlBriefs, setUrlBriefs] = useState<BrandBrief[]>([]);
-  const [enabledUrlBriefIds, setEnabledUrlBriefIds] = useState<Set<string>>(new Set());
+  // URL Crawl briefs — persist to localStorage nên không mất khi refresh.
+  // Vẫn không lưu vào brand (session-scoped ở cấp browser thay vì trong-modal).
+  const [urlBriefs, setUrlBriefs] = useState<BrandBrief[]>(() => {
+    try {
+      const raw = localStorage.getItem('bannerAds:urlBriefs');
+      return raw ? (JSON.parse(raw) as BrandBrief[]) : [];
+    } catch { return []; }
+  });
+  const [enabledUrlBriefIds, setEnabledUrlBriefIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('bannerAds:enabledUrlBriefIds');
+      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('bannerAds:urlBriefs', JSON.stringify(urlBriefs));
+    } catch (e) {
+      console.warn('Persist urlBriefs failed', e);
+    }
+  }, [urlBriefs]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(
+        'bannerAds:enabledUrlBriefIds',
+        JSON.stringify(Array.from(enabledUrlBriefIds)),
+      );
+    } catch (e) {
+      console.warn('Persist enabledUrlBriefIds failed', e);
+    }
+  }, [enabledUrlBriefIds]);
   // Brand JSON style guide — tách ra state riêng thay vì nhồi vào userPrompt.
   const [brandJsonPrompt, setBrandJsonPrompt] = useState<string>('');
   const [showStyleModal, setShowStyleModal] = useState(false);
