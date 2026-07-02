@@ -1009,18 +1009,27 @@ export const BannerTool: React.FC<BannerToolProps> = ({ onNavigate }) => {
               />
             </div>
 
-            {/* Advanced — collapsed, holds model + banner type (Sprint H6) */}
-            <AdvancedPopover
-              coachioModel={coachioModel}
-              coachioModels={[
-                { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
-                { id: 'gpt_image_2', name: 'GPT Image 2' },
-              ]}
-              onChangeCoachioModel={setCoachioModel}
-              bannerType={bannerType}
-              bannerTypeOptions={BANNER_TYPE_OPTIONS}
-              onChangeBannerType={(id) => setBannerType(id as BannerType)}
-            />
+            {/* Advanced — collapsed, holds model + banner type + JSON prompt */}
+            {(() => {
+              const activeBrand = brandProjects.find(p => p.id === activeBrandId);
+              const jsonFromBrand = !!(activeBrand && activeBrand.jsonPrompt && brandJsonPrompt === activeBrand.jsonPrompt.trim());
+              return (
+                <AdvancedPopover
+                  coachioModel={coachioModel}
+                  coachioModels={[
+                    { id: 'google_image_gen_banana_pro', name: 'Nano Banana Pro' },
+                    { id: 'gpt_image_2', name: 'GPT Image 2' },
+                  ]}
+                  onChangeCoachioModel={setCoachioModel}
+                  bannerType={bannerType}
+                  bannerTypeOptions={BANNER_TYPE_OPTIONS}
+                  onChangeBannerType={(id) => setBannerType(id as BannerType)}
+                  jsonPrompt={brandJsonPrompt}
+                  onChangeJsonPrompt={setBrandJsonPrompt}
+                  jsonFromBrand={jsonFromBrand}
+                />
+              );
+            })()}
           </div>
 
           {errorMsg && (
